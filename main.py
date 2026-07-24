@@ -7,4 +7,4 @@ if __name__ == "__main__":
     else:
         print("Already up to date.")
 
-print("Versioning test!")
+print("Versioning test again!")
