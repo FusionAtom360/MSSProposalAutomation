@@ -15,7 +15,6 @@ class Updater:
         "main.py",
         "ui.py",
         "solargraf.py",
-        "update.py",
         "details.json",
     ]
 
