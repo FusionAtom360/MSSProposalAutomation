@@ -25,30 +25,9 @@ class UpdateManager:
         self.current = self.details["version"]
 
     def latest_version(self):
-        url = (
-            f"https://api.github.com/repos/"
-            f"{self.REPO}/contents/src/details.json"
-        )
-
-        request = urllib.request.Request(
-            url,
-            headers={
-                "Accept": "application/vnd.github+json",
-                "User-Agent": "MSSProposalAutomation-Updater"
-            }
-        )
-
-        with urllib.request.urlopen(request, timeout=15) as response:
-            data = json.load(response)
-
-        # GitHub returns file contents as base64
-        import base64
-
-        content = base64.b64decode(
-            data["content"]
-        ).decode("utf-8")
-
-        return json.loads(content)["version"]
+        url = f"{self.RAW}/src/details.json"
+        with urllib.request.urlopen(url) as r:
+            return json.load(r)["version"]
 
     def update_available(self):
         return self.current != self.latest_version()
