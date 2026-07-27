@@ -30,10 +30,10 @@ if (
         subprocess.run(
             ["git", "clone", "https://github.com/FusionAtom360/MSSProposalAutomation"]
         , check=True)
-        subprocess.run(["python", "-m", "venv", ".venv"], check=True)
-        subprocess.run([".venv/Scripts/pip", "install", "-r", "src/requirements.txt"], check=True)
+        subprocess.run(["python", "-m", "venv", "MSSProposalAutomation/.venv"], check=True)
+        subprocess.run(["MSSProposalAutomation/.venv/Scripts/pip", "install", "-r", "MSSProposalAutomation/src/requirements.txt"], check=True)
         os.remove(".gitignore")
-        os.remove("src/.gitignore")
+        os.remove("MSSProposalAutomation/src/.gitignore")
         required_keys = [
             "SOLARGRAF_EMAIL",
             "SOLARGRAF_PASSWORD",
@@ -42,13 +42,14 @@ if (
             "FILESERVER_BIDS_FOLDER"
         ]
 
-        with open(".env.example", "w") as file:
+        with open("MSSProposalAutomation/src/.env", "w") as file:
             for key in required_keys:
                 file.write(f"{key}=\n")
                 
-        os.startfile("src/.env")
+        os.startfile("MSSProposalAutomation/src/.env")
         input("Fill in required fields in .env file, then press Enter to continue...")
-        os.startfile("src/main.py")
+        os.startfile("MSSProposalAutomation/src/main.py")
+        os.remove("MSSProposalAutomation/install.py")
         os.remove("install.py")
         exit(0)
     else:
