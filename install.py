@@ -21,7 +21,7 @@ if (
     == "y"
 ):
     response = requests.get(
-        "https://raw.githubusercontent.com/FusionAtom360/MSSProposalAutomation/main/details.json"
+        "https://raw.githubusercontent.com/FusionAtom360/MSSProposalAutomation/main/src/details.json"
     )
     if response.status_code == 200:
         details = response.json()
