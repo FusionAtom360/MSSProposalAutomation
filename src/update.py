@@ -5,6 +5,7 @@ import shutil
 import tempfile
 import threading
 import customtkinter as ctk
+import traceback
 
 class UpdateManager:
     REPO = "FusionAtom360/MSSProposalAutomation"
@@ -41,8 +42,10 @@ class UpdateManager:
             path = item["path"]
             if not path.startswith("src/"):
                 continue
-            rel = Path(path[4:])
-            if rel.name in self.EXCLUDE:
+            if "." not in path:
+                continue
+            rel = path[4:].replace("\\", "/")
+            if rel in self.EXCLUDE:
                 continue
             files.append(rel)
         return files
@@ -53,6 +56,7 @@ class UpdateManager:
             tmp = Path(tmp)
             for file in files:
                 url = f"{self.RAW}/src/{file}"
+                print(url)
                 data = urllib.request.urlopen(url).read()
                 target = tmp / file
                 target.parent.mkdir(parents=True, exist_ok=True)
@@ -119,11 +123,16 @@ class UpdateManager:
                 )
 
         except Exception as e:
+            error_message = (
+                f"Update failed:\n"
+                f"{type(e).__name__}: {e}\n\n"
+                f"{traceback.format_exc()}"
+            )
+            
+
             self.window.after(
                 0,
-                lambda: self.finish(
-                    f"Update check failed:\n{e}"
-                )
+                lambda msg=error_message: self.finish(msg)
             )
 
 
@@ -150,11 +159,15 @@ class UpdateManager:
             )
 
         except Exception as e:
+            error_message = (
+                f"Update failed:\n"
+                f"{type(e).__name__}: {e}\n\n"
+                f"{traceback.format_exc()}"
+            )
+
             self.window.after(
                 0,
-                lambda: self.finish(
-                    f"Update failed:\n{e}"
-                )
+                lambda msg=error_message: self.finish(msg)
             )
 
 
