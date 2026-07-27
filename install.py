@@ -13,7 +13,7 @@ try:
     )
 except (subprocess.CalledProcessError, FileNotFoundError):
     print("Git is not installed or not found in PATH. Please install Git to continue.")
-    input()
+    input("Press Enter to exit...")
     exit(1)
 
 if (
@@ -32,7 +32,7 @@ if (
         , check=True)
         subprocess.run(["python", "-m", "venv", "MSSProposalAutomation/.venv"], check=True)
         subprocess.run(["MSSProposalAutomation/.venv/Scripts/pip", "install", "-r", "MSSProposalAutomation/src/requirements.txt"], check=True)
-        os.remove(".gitignore")
+        os.remove("MSSProposalAutomation/.gitignore")
         os.remove("MSSProposalAutomation/src/.gitignore")
         required_keys = [
             "SOLARGRAF_EMAIL",
@@ -42,17 +42,17 @@ if (
             "FILESERVER_BIDS_FOLDER"
         ]
 
-        with open("MSSProposalAutomation/src/.env", "w") as file:
+        with open("MSSProposalAutomation/src/.env", "w", encoding="utf-8") as file:
             for key in required_keys:
                 file.write(f"{key}=\n")
-                
-        os.startfile("MSSProposalAutomation/src/.env")
+        script_dir = os.path.dirname(os.path.abspath(__file__))
+        os.startfile(os.path.join(script_dir, "MSSProposalAutomation/src/.env"))
         input("Fill in required fields in .env file, then press Enter to continue...")
-        os.startfile("MSSProposalAutomation/src/main.py")
+        subprocess.Popen(["cd", os.path.join(script_dir, "MSSProposalAutomation/"), "&&", os.path.join(script_dir, "MSSProposalAutomation/.venv/Scripts/python.exe"), "src/main.py"], shell=True)
         os.remove("MSSProposalAutomation/install.py")
         os.remove("install.py")
         exit(0)
     else:
         print("Failed to fetch version details. Please check your internet connection.")
-        input()
+        input("Press Enter to exit...")
         exit(1)
