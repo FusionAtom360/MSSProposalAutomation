@@ -6,8 +6,7 @@ load_dotenv()
 
 def main():
     update = UpdateManager()
-    if update.update_available():
-        update.update()
+    update.run_ui()
 
     app = App()
     app.mainloop()
