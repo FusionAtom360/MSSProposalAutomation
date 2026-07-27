@@ -45,7 +45,7 @@ if (
         ]
         with open("MSSProposalAutomation/src/.env", "w", encoding="utf-8") as file:
             for key in required_keys:
-                file.write(f"{key}={input(f'{key}=')}\n")
+                file.write(f"{key}=\n")
         script_dir = os.path.dirname(os.path.abspath(__file__))
         subprocess.Popen(["cd", os.path.join(script_dir, "MSSProposalAutomation/"), "&&", os.path.join(script_dir, "MSSProposalAutomation/.venv/Scripts/python.exe"), "src/main.py"], shell=True)
         os.remove("install.py")

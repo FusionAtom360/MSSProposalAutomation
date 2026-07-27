@@ -10,7 +10,7 @@ import customtkinter as ctk
 from tkinter import filedialog, messagebox
 
 from projects import ProjectManager
-from solargraf import SolargrafScraper
+from scraper import Scraper
 from office import OfficeDocumentManager
 
 from data import DataManager
@@ -30,20 +30,11 @@ class App(ctk.CTk):
 
         self.settings = SettingsManager()
         self.data = DataManager()
-        self.templates = TemplateManager()
+        self.templates = TemplateManager(self.data)
 
         self.manager = ProjectManager()
-        self.scraper = SolargrafScraper()
+        self.scraper = Scraper()
         self.office = OfficeDocumentManager()
-
-        self.current_payload = None
-        self.current_project_id = None
-        self.current_public_id = None
-        self.current_proposal_id = None
-        self.current_financial_id = None
-        self.current_client_name = None
-        self.current_address = None
-        self.current_size_kw = None
 
         self._busy = False
         self._action_buttons = []
@@ -192,7 +183,7 @@ class App(ctk.CTk):
             else:
                 button.configure(
                     state=(
-                        "disabled" if busy or self.current_payload is None else "normal"
+                        "disabled" if busy or self.data == {} else "normal"
                     )
                 )
 
@@ -237,29 +228,8 @@ class App(ctk.CTk):
         messagebox.showerror("MSS Proposal Automation", message)
 
     def _require_project(self):
-        if not self.current_payload or self.current_project_id is None:
+        if self.data == {} or self.data.project.id == 0:
             raise RuntimeError("Load a project from SolarGraf first.")
-
-    def _project_folder(self):
-        self._require_project()
-        return self.manager.projects_dir / str(self.current_project_id)
-
-    def _project_documents_folder(self):
-        return self._project_folder() / "documents"
-
-    def _open_path(self, path):
-        resolved_path = Path(path)
-        if not resolved_path.exists():
-            raise FileNotFoundError(f"{resolved_path} does not exist.")
-        os.startfile(resolved_path)
-
-    def _find_first_matching_file(self, folder, patterns):
-        folder_path = Path(folder)
-        for pattern in patterns:
-            matches = sorted(folder_path.rglob(pattern))
-            if matches:
-                return matches[0]
-        return None
 
     def _find_value(self, payload, target_keys):
         if isinstance(payload, dict):
@@ -278,7 +248,7 @@ class App(ctk.CTk):
 
     def _update_summary(self):
         self.summary_labels["project_id"].configure(
-            text=str(self.current_project_id or "Not loaded")
+            text=str(self.data.project.id or "Not loaded")
         )
         if self.current_size_kw is None:
             size_text = "Not loaded"
@@ -293,189 +263,65 @@ class App(ctk.CTk):
         self.project_hint.configure(text=f"{address}")
         self._update_summary()
         self._set_busy(False)
-        self._set_status(f"Loaded {customer_name} ({self.current_project_id}).")
+        self._set_status(f"Loaded {customer_name} ({self.data.project.id}).")
 
     def load_project_from_solargraf(self):
-        payload = self.scraper.get_project_data()
-        project_id = self.manager.create_project_from_json(payload)
-        if project_id is None:
+        payload = self.scraper.get_project_data(self.data)
+        self.data.load_json(payload)
+        if self.data.project.id == 0:
             raise RuntimeError("SolarGraf payload did not include a project ID.")
-
-        self.current_payload = payload
-        self.current_project_id = str(project_id)
-        self.current_public_id = payload.get("public_id") or self._find_value(
-            payload, {"public_id"}
-        )
-        self.current_client_name = payload.get("client_name") or self._find_value(
-            payload, {"client_name"}
-        )
-        self.current_address = payload.get("address") or self._find_value(
-            payload, {"address"}
-        )
-
-        pricing = (
-            payload.get("Settings", {}).get("Pricing", {})
-            if isinstance(payload, dict)
-            else {}
-        )
-        project_connection = (
-            pricing.get("ProjectConnection", {}) if isinstance(pricing, dict) else {}
-        )
-        financial_options = (
-            pricing.get("FinancialOptions", []) if isinstance(pricing, dict) else []
-        )
-        proposals = payload.get("proposals", []) if isinstance(payload, dict) else []
-
-        self.current_proposal_id = (
-            project_connection.get("proposal_id")
-            if isinstance(project_connection, dict)
-            else None
-        )
-        self.current_financial_id = None
-        if isinstance(financial_options, list) and financial_options:
-            first_option = financial_options[0]
-            if isinstance(first_option, dict):
-                self.current_financial_id = first_option.get("id")
-
-        self.current_size_kw = None
-        if isinstance(proposals, list) and proposals:
-            first_proposal = proposals[0]
-            if isinstance(first_proposal, dict):
-                self.current_size_kw = first_proposal.get("sizeInKw")
 
         self.after(0, self._mark_project_loaded)
         return None
 
     def open_images_folder(self):
         self._require_project()
-        self.manager.open_images_folder(self.current_project_id)
-        return f"Opened images folder for project {self.current_project_id}."
+        self.manager.open_images_folder(self.data.project.id)
+        return f"Opened images folder for project {self.data.project.id}."
 
     def open_project_in_solargraf(self):
         self._require_project()
-        webbrowser.open(f"https://app.solargraf.com/projects/{self.current_project_id}")
-        return f"Opened SolarGraf project {self.current_project_id}."
+        webbrowser.open(f"https://app.solargraf.com/projects/{self.data.project.id}")
+        return f"Opened SolarGraf project {self.data.project.id}."
 
     def update_project_data(self):
         self._require_project()
-        payload = self.scraper.get_project_data(
-            project_id=self.current_project_id, public_id=self.current_public_id
-        )
+        payload = self.scraper.get_project_data(self.data)
         if not payload:
             raise RuntimeError("Failed to fetch project data.")
-        self.current_payload = payload
-        self.manager.update_project_data(self.current_project_id, payload)
-        self.current_public_id = payload.get("public_id") or self._find_value(
-            payload, {"public_id"}
-        )
-        self.current_client_name = payload.get("client_name") or self._find_value(
-            payload, {"client_name"}
-        )
-        self.current_address = payload.get("address") or self._find_value(
-            payload, {"address"}
-        )
-
-        pricing = (
-            payload.get("Settings", {}).get("Pricing", {})
-            if isinstance(payload, dict)
-            else {}
-        )
-        project_connection = (
-            pricing.get("ProjectConnection", {}) if isinstance(pricing, dict) else {}
-        )
-        financial_options = (
-            pricing.get("FinancialOptions", []) if isinstance(pricing, dict) else []
-        )
-        proposals = payload.get("proposals", []) if isinstance(payload, dict) else []
-
-        self.current_proposal_id = (
-            project_connection.get("proposal_id")
-            if isinstance(project_connection, dict)
-            else None
-        )
-        self.current_financial_id = None
-        if isinstance(financial_options, list) and financial_options:
-            first_option = financial_options[0]
-            if isinstance(first_option, dict):
-                self.current_financial_id = first_option.get("id")
-
-        self.current_size_kw = None
-        if isinstance(proposals, list) and proposals:
-            first_proposal = proposals[0]
-            if isinstance(first_proposal, dict):
-                self.current_size_kw = first_proposal.get("sizeInKw")
-
         self._mark_project_loaded()
-        return f"Updated project data for {self.current_project_id}."
+        return f"Updated project data for {self.data.project.id}."
 
     def download_proposal_document(self):
         self._require_project()
-        if (
-            not self.current_public_id
-            or not self.current_proposal_id
-            or not self.current_financial_id
-        ):
-            raise RuntimeError(
-                "Project data is missing public, proposal, or financial IDs."
-            )
-
-        output_path = self.scraper.get_proposal_document(
-            str(self.current_project_id),
-            str(self.current_public_id),
-            str(self.current_proposal_id),
-            str(self.current_financial_id),
-        )
+        output_path = self.scraper.get_proposal_document(self.data)
         return f"Downloaded proposal document to {output_path}."
 
     def open_pricing_spreadsheet(self):
         self._require_project()
-        if self.current_payload is None:
-            raise RuntimeError("Project data is missing.")
-
-        spreadsheet = self.office.complete_pricing_spreadsheet(
-            str(self.current_project_id),
-            self.current_payload,
-        )
-        self._open_path(spreadsheet)
-        return f"Generated and opened pricing spreadsheet {spreadsheet}."
+        self.office.complete_pricing_spreadsheet(self.data, self.templates)
+        os.startfile(self.data.files.pricing_spreadsheet)
+        return f"Generated and opened pricing spreadsheet {self.data.files.pricing_spreadsheet}."
 
     def generate_cover_letter(self):
         self._require_project()
-        if self.current_payload is None:
-            raise RuntimeError("Project data is missing.")
-
-        destination = self.office.complete_cover_letter(
-            str(self.current_project_id),
-            self.current_payload,
-        )
-        self._open_path(destination)
-        return f"Generated and opened cover letter at {destination}."
+        self.office.complete_cover_letter(self.data, self.templates)
+        return f"Generated and opened cover letter at {self.data.files.cover_letter_docx}."
 
     def finalize_proposal_document(self):
         self._require_project()
-
-        destination = self.office.finalize_proposal(
-            str(self.current_project_id),
-            self.current_payload,
-        )
-
-        return f"Final proposal document created at {destination}."
+        self.office.finalize_proposal(self.data, self.scraper)
+        return f"Final proposal document created at {self.data.files.final_proposal}."
 
     def draft_email_to_customer(self):
         self._require_project()
-        self.office.generate_email(
-            str(self.current_project_id),
-            self.current_payload,
-        )
+        self.office.generate_email(self.data, self.templates)
         return f"Drafted email to customer with proposal attached."
 
     def copy_to_fileserver(self):
         self._require_project()
-        destination_folder = self.office.copy_to_fileserver(
-            str(self.current_project_id),
-            self.current_payload,
-        )
-        return f"Copied project {self.current_project_id} to {destination_folder}."
+        self.office.copy_to_fileserver(self.data, self.settings)
+        return f"Copied project {self.data.project.id} to {self.settings.files.bids_folder}."
 
 
 if __name__ == "__main__":
