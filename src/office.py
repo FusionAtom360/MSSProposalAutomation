@@ -362,7 +362,7 @@ class OfficeDocumentManager:
             project_data["Materials"]["inverter"][0]["Manufacturer"]["name"].lower()
             == "enphase"
         ):
-            return "Mid-State Solar is a Platinum Installer has been installing Enphase products since 2009."
+            return "As an Enphase Platinum Installer, Mid-State Solar has been installing Enphase products since 2009."
         else:
             return ""
 

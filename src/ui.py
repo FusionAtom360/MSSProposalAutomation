@@ -13,6 +13,10 @@ from projects import ProjectManager
 from solargraf import SolargrafScraper
 from office import OfficeDocumentManager
 
+from data import DataManager
+from settings import SettingsManager
+from template import TemplateManager
+
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
 
@@ -23,6 +27,10 @@ class App(ctk.CTk):
         self.title("MSS Proposal Automation")
         self.geometry("1080x720")
         self.minsize(960, 640)
+
+        self.settings = SettingsManager()
+        self.data = DataManager()
+        self.templates = TemplateManager()
 
         self.manager = ProjectManager()
         self.scraper = SolargrafScraper()

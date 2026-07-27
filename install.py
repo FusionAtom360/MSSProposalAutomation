@@ -1,10 +1,11 @@
+import shutil
 import subprocess
 import os
 
 try:
     import requests
 except ImportError:
-    subprocess.run(["pip", "install", "requests"])
+    subprocess.run(["pip", "install", "requests"], check=True)
     import requests
 
 try:
@@ -34,22 +35,19 @@ if (
         subprocess.run(["MSSProposalAutomation/.venv/Scripts/pip", "install", "-r", "MSSProposalAutomation/src/requirements.txt"], check=True)
         os.remove("MSSProposalAutomation/.gitignore")
         os.remove("MSSProposalAutomation/src/.gitignore")
+        os.remove("MSSProposalAutomation/install.py")
+        shutil.rmtree("MSSProposalAutomation/.git")
         required_keys = [
             "SOLARGRAF_EMAIL",
             "SOLARGRAF_PASSWORD",
-            "LOAN_TERM",
-            "LOAN_INTEREST_RATE",
-            "FILESERVER_BIDS_FOLDER"
+            "LOAN_INTEREST_RATE"
+            "BIDS_FOLDER"
         ]
-
         with open("MSSProposalAutomation/src/.env", "w", encoding="utf-8") as file:
             for key in required_keys:
-                file.write(f"{key}=\n")
+                file.write(f"{key}={input(f'{key}=')}\n")
         script_dir = os.path.dirname(os.path.abspath(__file__))
-        os.startfile(os.path.join(script_dir, "MSSProposalAutomation/src/.env"))
-        input("Fill in required fields in .env file, then press Enter to continue...")
         subprocess.Popen(["cd", os.path.join(script_dir, "MSSProposalAutomation/"), "&&", os.path.join(script_dir, "MSSProposalAutomation/.venv/Scripts/python.exe"), "src/main.py"], shell=True)
-        os.remove("MSSProposalAutomation/install.py")
         os.remove("install.py")
         exit(0)
     else:

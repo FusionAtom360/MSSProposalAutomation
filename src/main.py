@@ -1,5 +1,8 @@
+from dotenv import load_dotenv
+
 from ui import App
 from update import UpdateManager
+load_dotenv()
 
 def main():
     update = UpdateManager()

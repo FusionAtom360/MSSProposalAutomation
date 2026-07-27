@@ -130,6 +130,7 @@ class SolargrafScraper:
             output_path = Path("projects") / str(project_id) / "documents" / "solargraf_proposal.pdf"
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_bytes(response.body())
+            os.startfile(output_path)
 
             request_context.dispose()
             return output_path
