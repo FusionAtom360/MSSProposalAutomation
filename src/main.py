@@ -6,8 +6,8 @@ load_dotenv()
 
 def main():
     update = UpdateManager()
-    if update.check_for_update():
-        update.perform_update()
+    if update.update_available():
+        update.update()
 
     app = App()
     app.mainloop()
