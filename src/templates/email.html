@@ -14,13 +14,13 @@
 </head>
 
 <body>
-    <p>Hi Ellen,</p>
+    <p>Hi {{CLIENT_FIRST_NAME}},</p>
     <p>Nice to meet with you last week! Thank you for your interest in a home energy solution from Mid-State Solar, and
-        we appreciate the opportunity to submit the attached proposal for a PV system and ESS. To best balance between
-        energy production goals, and cost effectiveness of the design, we are recommending a {{PV_SIZE}} kW system with
-        {{PANEL_QUANTITY}} {{PANEL_STC}}-watt solar modules and {{INVERTER_MANUFACTURER}} {{INVERTER_MODEL}}
+        we appreciate the opportunity to submit the attached proposal for a PV system with optional battery storage. To best balance between
+        energy production goals and cost effectiveness of the design, we are recommending a {{PV_SIZE}} kW system with
+        {{PANEL_COUNT}} {{PANEL_SIZE}}-watt solar modules and {{INVERTER_MANUFACTURER}} {{INVERTER_MODEL}}
         micro-inverters, with optional battery
-        storage of {{BATTERY_SIZE}}kWh.</p>
+        storage of {{ESS_SIZE}} kWh.</p>
     <p>The system is expected to produce around {{TOTAL_SIZE}} kWh annually, or about {{USAGE_PERCENTAGE}}% of your
         average annual MID usage (based on the historical monthly usage amounts provided to us). This quote includes all
         permits and application fees for the solar project, including the $900 MID application fee.</p>

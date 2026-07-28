@@ -127,7 +127,7 @@ class DataManager:
 
     def update_from_pricing_spreadsheet(self, get_cell_value_func):
         self.pricing.pv_cost = get_cell_value_func(self, "Pricing Calculator", "D88")
-        self.pricing.battery_cost = get_cell_value_func(
+        self.pricing.ess_cost = get_cell_value_func(
             self, "Pricing Calculator", "D89"
         )
         self.pricing.total_cost = get_cell_value_func(self, "Pricing Calculator", "D90")
@@ -221,7 +221,7 @@ class DataManager:
     class Pricing:
         id: str = ""
         pv_cost = 0.0
-        battery_cost: float = 0.0
+        ess_cost: float = 0.0
         total_cost: float = 0.0
         cost_per_watt: float = 0.0
         loan_term: int = int(os.getenv("LOAN_TERM", "0"))

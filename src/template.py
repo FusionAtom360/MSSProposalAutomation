@@ -1,5 +1,8 @@
+import datetime
+
 from data import DataManager
 from openpyxl import load_workbook
+from datetime import datetime
 
 class TemplateManager:
     def __init__(self, data):
@@ -45,13 +48,21 @@ class TemplateManager:
         self.templates[r"{{BATTERY_MODEL}}"] = data.system.battery.model
         self.templates[r"{{BATTERY_CAPACITY}}"] = data.system.battery.capacity
         self.templates[r"{{BATTERY_WARRANTY}}"] = data.system.battery.warranty
+        self.templates[r"{{BATTERY_WARRANTY_CYCLES}}"] = data.system.battery.warranty * 400
+        self.templates[r"{{BATTERY_WARRANTY_CAPACITY}}"] = 60
         self.templates[r"{{BATTERY_COUNT}}"] = data.system.battery.count
+        
 
         self.templates[r"{{SYSTEM_TYPE}}"] = data.system.type
         self.templates[r"{{PV_SIZE}}"] = data.system.pv_size
         self.templates[r"{{ESS_SIZE}}"] = data.system.ess_size
         self.templates[r"{{ESS_TYPE}}"] = "w/ IQ Meter Collar (for Off-Grid Backup Operation)" if data.system.ess_type == 0 else "w/o Meter Collar (for On-Grid Operation ONLY)"
 
+        self.templates[r"{{PV_COST}}"] = data.pricing.pv_cost
+        self.templates[r"{{ESS_COST}}"] = data.pricing.ess_cost
+        self.templates[r"{{TOTAL_COST}}"] = data.pricing.total_cost
+
+        self.templates[r"{{PREPARED_DATE_MMDDYYYY}}"] = datetime.now().strftime("%m/%d/%Y")
         self.templates[r"{{ENPHASE_PLATINUM_INSTALLER}}"] = (
             "As an Enphase Platinum Installer, Mid-State Solar has been installing Enphase products since 2009."
             if data.system.inverter.manufacturer == "Enphase Energy Inc."
