@@ -1,15 +1,13 @@
 import os
 import shutil
 import threading
+import traceback
 import webbrowser
-from pathlib import Path
-from urllib.parse import quote
-import datetime
+import json
 
 import customtkinter as ctk
 from tkinter import filedialog, messagebox
 
-from projects import ProjectManager
 from scraper import Scraper
 from office import OfficeDocumentManager
 
@@ -32,9 +30,10 @@ class App(ctk.CTk):
         self.data = DataManager()
         self.templates = TemplateManager(self.data)
 
-        self.manager = ProjectManager()
         self.scraper = Scraper()
         self.office = OfficeDocumentManager()
+        with open("./src/details.json", "r", encoding="utf-8") as f:
+            self.version = json.load(f).get("version", "0.0.0")
 
         self._busy = False
         self._action_buttons = []
@@ -56,6 +55,13 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=24, weight="bold"),
         )
         title.grid(row=0, column=0, padx=20, pady=(20, 4), sticky="w")
+        
+        subtitle = ctk.CTkLabel(
+            sidebar,
+            text=f"v{self.version}",
+            font=ctk.CTkFont(size=14),
+        )
+        subtitle.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="w")
 
         actions_frame = ctk.CTkScrollableFrame(
             sidebar, corner_radius=14, label_text="Actions"
@@ -64,9 +70,9 @@ class App(ctk.CTk):
         actions_frame.grid_columnconfigure(0, weight=1)
 
         button_specs = [
-            ("Load Project from SolarGraf", self.load_project_from_solargraf),
+            ("Load Project from Solargraf", self.load_project_from_solargraf),
             ("Open Images Folder", self.open_images_folder),
-            ("Open Project in SolarGraf", self.open_project_in_solargraf),
+            ("Open Project in Solargraf", self.open_project_in_solargraf),
             ("Update Project Data", self.update_project_data),
             ("Download Proposal Document", self.download_proposal_document),
             ("Open Pricing Spreadsheet", self.open_pricing_spreadsheet),
@@ -192,21 +198,23 @@ class App(ctk.CTk):
             return
 
         def worker():
-            try:
-                result = task()
-            except (
-                RuntimeError,
-                FileNotFoundError,
-                OSError,
-                ValueError,
-                KeyError,
-                TypeError,
-            ) as exc:  # noqa: BLE001
-                self.after(
-                    0, lambda error=exc: self._handle_task_error(task.__name__, error)
-                )
-            else:
-                self.after(0, lambda: self._handle_task_result(task.__name__, result))
+            result = task()
+            self.after(0, lambda: self._handle_task_result(task.__name__, result))
+            # try:
+            #     result = task()
+            # except (
+            #     RuntimeError,
+            #     FileNotFoundError,
+            #     OSError,
+            #     ValueError,
+            #     KeyError,
+            #     TypeError,
+            # ) as exc:  # noqa: BLE001
+            #     self.after(
+            #         0, lambda error=exc: self._handle_task_error(task.__name__, error)
+            #     )
+            # else:
+            #     self.after(0, lambda: self._handle_task_result(task.__name__, result))
 
         self._set_busy(True)
         self._set_status(f"Running {task.__name__.replace('_', ' ')}...")
@@ -223,7 +231,7 @@ class App(ctk.CTk):
 
     def _handle_task_error(self, task_name, exc):
         self._set_busy(False)
-        message = f"{task_name.replace('_', ' ').capitalize()} failed: {exc}"
+        message = f"{task_name.replace('_', ' ').capitalize()} failed: {exc} {traceback.format_exc()}"
         self._set_status(message)
         messagebox.showerror("MSS Proposal Automation", message)
 
@@ -250,15 +258,15 @@ class App(ctk.CTk):
         self.summary_labels["project_id"].configure(
             text=str(self.data.project.id or "Not loaded")
         )
-        if self.current_size_kw is None:
+        if self.data.system.pv_size == 0:
             size_text = "Not loaded"
         else:
-            size_text = f"{self.current_size_kw:g} kW"
+            size_text = f"{self.data.system.pv_size:g} kW"
         self.summary_labels["size_kw"].configure(text=size_text)
 
     def _mark_project_loaded(self):
-        customer_name = self.current_client_name or "Unknown customer"
-        address = self.current_address or "Address not available"
+        customer_name = self.data.client.name or "Unknown customer"
+        address = self.data.client.address.street or "Address not available"
         self.project_title.configure(text=customer_name)
         self.project_hint.configure(text=f"{address}")
         self._update_summary()
@@ -268,6 +276,7 @@ class App(ctk.CTk):
     def load_project_from_solargraf(self):
         payload = self.scraper.get_project_data(self.data)
         self.data.load_json(payload)
+        self.templates.update(self.data)
         if self.data.project.id == 0:
             raise RuntimeError("SolarGraf payload did not include a project ID.")
 
@@ -276,7 +285,7 @@ class App(ctk.CTk):
 
     def open_images_folder(self):
         self._require_project()
-        self.manager.open_images_folder(self.data.project.id)
+        os.startfile(self.data.files.images_folder)
         return f"Opened images folder for project {self.data.project.id}."
 
     def open_project_in_solargraf(self):
@@ -306,11 +315,13 @@ class App(ctk.CTk):
     def generate_cover_letter(self):
         self._require_project()
         self.office.complete_cover_letter(self.data, self.templates)
+        os.startfile(self.data.files.cover_letter_docx)
         return f"Generated and opened cover letter at {self.data.files.cover_letter_docx}."
 
     def finalize_proposal_document(self):
         self._require_project()
         self.office.finalize_proposal(self.data, self.scraper)
+        os.startfile(self.data.files.final_proposal)
         return f"Final proposal document created at {self.data.files.final_proposal}."
 
     def draft_email_to_customer(self):

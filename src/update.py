@@ -182,6 +182,6 @@ class UpdateManager:
 
         # Close automatically after success
         self.window.after(
-            2000,
+            100,
             self.window.destroy
         )

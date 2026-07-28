@@ -23,8 +23,8 @@ class SettingsManager():
     
     @dataclass
     class Files():
-        projects_folder: Path = Path("./projects")
-        templates_folder: Path = Path("./src/templates")
+        projects_folder: Path = Path("./projects").resolve()
+        templates_folder: Path = Path("./src/templates").resolve()
         bids_folder: Path = Path(os.getenv("BIDS_FOLDER", "./bids"))
     
     

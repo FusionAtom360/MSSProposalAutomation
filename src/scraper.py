@@ -110,8 +110,8 @@ class Scraper:
             pdf_path = (
                 f"/financial/pdf/"
                 f"{data.project.api_id}/"
-                f"{data.project.id}/"
-                f"{data.pricing.id}.pdf"
+                f"{data.project.proposal_id}/"
+                f"{data.project.financial_id}.pdf"
             )
             download_url = (
                 f"{base_url}"
