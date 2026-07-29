@@ -63,7 +63,6 @@ class Scraper:
 
     def get_project_data(self, data: DataManager, settings: SettingsManager) -> dict:
         self._refresh_auth_token(settings)
-        
         response = requests.get(
             f"https://api.solargraf.com/public/project/{data.project.api_id}",
             headers={
@@ -80,33 +79,33 @@ class Scraper:
         return response.json()
     
     def get_proposal_document(self, data: DataManager) -> Path:
-        with sync_playwright() as p:
-            request_context = p.request.new_context()
-
-            base_url = "https://app.solargraf.com"
-            pdf_path = (
-                f"/financial/pdf/"
-                f"{data.project.api_id}/"
-                f"{data.project.proposal_id}/"
-                f"{data.project.financial_id}.pdf"
+        base_url = "https://app.solargraf.com"
+        pdf_path = (
+            f"/financial/pdf/"
+            f"{data.project.api_id}/"
+            f"{data.project.proposal_id}/"
+            f"{data.project.financial_id}.pdf"
+        )
+        download_url = (
+            f"{base_url}"
+            f"{pdf_path}"
+            f"?lang=en"
+        )
+        response = requests.get(download_url, timeout=30)
+        print(download_url)
+        print(response.status_code)
+        print(response.headers.get("content-type"))
+        print(response.text[:200])
+        if not response.ok:
+            raise RuntimeError(
+                "Failed to download proposal PDF: "
+                f"HTTP {response.status_code}"
             )
-            download_url = (
-                f"{base_url}"
-                f"{pdf_path}"
-                f"?lang=en"
-            )
-            response = request_context.get(download_url)
-            if not response.ok:
-                raise RuntimeError(
-                    "Failed to download proposal PDF: "
-                    f"HTTP {response.status}"
-                )
 
-            data.files.solargraf_proposal.write_bytes(response.body())
-            os.startfile(data.files.solargraf_proposal)
+        data.files.solargraf_proposal.write_bytes(response.content)
+        os.startfile(data.files.solargraf_proposal)
 
-            request_context.dispose()
-            return data.files.solargraf_proposal
+        return data.files.solargraf_proposal
     
     @staticmethod
     def _is_http_url(value: str) -> bool:
@@ -180,7 +179,6 @@ class Scraper:
         for project in response.json()["data"]:
             data = DataManager()
             data.load_json(project, False)
-            data.set_api_id(project.get("public_id"))
             project_data.append(data)
 
         return project_data

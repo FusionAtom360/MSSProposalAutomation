@@ -19,6 +19,7 @@ class DataManager:
     def load_json(self, json_data: dict, save_to_file: bool = True):
         self.data = json_data
         self.project.id = self._get("id", default=0)
+        self.project.api_id = self._get("public_id", default="")
 
         self.client.first_name = self._get("client_name", default="").split()[0] if self._get("client_name", default="") else ""
         self.client.last_name = " ".join(self._get("client_name", default=". .").split()[1:]) if self._get("client_name", default="") else ""

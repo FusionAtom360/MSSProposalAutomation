@@ -1,12 +1,11 @@
 import os
-import shutil
 import threading
 import traceback
 import webbrowser
 import json
 
 import customtkinter as ctk
-from tkinter import filedialog, messagebox
+from tkinter import messagebox
 
 from scraper import Scraper
 from office import OfficeDocumentManager
@@ -36,7 +35,8 @@ class App(ctk.CTk):
             self.version = json.load(f).get("version", "0.0.0")
 
         self._busy = False
-        self._action_buttons = []
+        self._action_buttons = {}
+        self._completed_actions = set()
 
         self._build_layout()
 
@@ -73,9 +73,9 @@ class App(ctk.CTk):
             ("Load Project from Solargraf", self.load_project_from_solargraf),
             ("Open Images Folder", self.open_images_folder),
             ("Open Project in Solargraf", self.open_project_in_solargraf),
+            ("Open Pricing Spreadsheet", self.open_pricing_spreadsheet),
             ("Update Project Data", self.update_project_data),
             ("Download Proposal Document", self.download_proposal_document),
-            ("Open Pricing Spreadsheet", self.open_pricing_spreadsheet),
             ("Generate Cover Letter", self.generate_cover_letter),
             ("Finalize Proposal Document", self.finalize_proposal_document),
             ("Draft Email to Customer", self.draft_email_to_customer),
@@ -89,7 +89,10 @@ class App(ctk.CTk):
             button.grid(row=row, column=0, padx=8, pady=(0, 10), sticky="ew")
             if row > 0:
                 button.configure(state="disabled")
-            self._action_buttons.append(button)
+            self._action_buttons[command.__name__] = {
+                "button": button,
+                "text": label,
+            }
 
         self.status_label = ctk.CTkLabel(
             sidebar,
@@ -183,12 +186,15 @@ class App(ctk.CTk):
 
     def _set_busy(self, busy):
         self._busy = busy
-        for index, button in enumerate(self._action_buttons):
+
+        for index, button_data in enumerate(self._action_buttons.values()):
+            button = button_data["button"]
+
             if index == 0:
                 button.configure(state="disabled" if busy else "normal")
             else:
                 button.configure(
-                    state=("disabled" if busy or self.data == {} else "normal")
+                    state=("disabled" if busy or not self.data.project.id else "normal")
                 )
 
     def _run_task(self, task):
@@ -196,23 +202,21 @@ class App(ctk.CTk):
             return
 
         def worker():
-            result = task()
-            self.after(0, lambda: self._handle_task_result(task.__name__, result))
-            # try:
-            #     result = task()
-            # except (
-            #     RuntimeError,
-            #     FileNotFoundError,
-            #     OSError,
-            #     ValueError,
-            #     KeyError,
-            #     TypeError,
-            # ) as exc:  # noqa: BLE001
-            #     self.after(
-            #         0, lambda error=exc: self._handle_task_error(task.__name__, error)
-            #     )
-            # else:
-            #     self.after(0, lambda: self._handle_task_result(task.__name__, result))
+            try:
+                result = task()
+            except (
+                RuntimeError,
+                FileNotFoundError,
+                OSError,
+                ValueError,
+                KeyError,
+                TypeError,
+            ) as exc:
+                self.after(
+                    0, lambda error=exc: self._handle_task_error(task.__name__, error)
+                )
+            else:
+                self.after(0, lambda: self._handle_task_result(task.__name__, result))
 
         self._set_busy(True)
         self._set_status(f"Running {task.__name__.replace('_', ' ')}...")
@@ -220,12 +224,29 @@ class App(ctk.CTk):
 
     def _handle_task_result(self, task_name, result):
         self._set_busy(False)
+
+        self._completed_actions.add(task_name)
+        self._update_button_status(task_name)
+
         if task_name == "load_project_from_solargraf":
             return
+
         if result:
             self._set_status(result)
         else:
-            self._set_status(f"{task_name.replace('_', ' ').capitalize()} complete.")
+            self._set_status(
+                f"{task_name.replace('_', ' ').capitalize()} complete."
+            )
+
+    def _update_button_status(self, task_name):
+        button_data = self._action_buttons.get(task_name)
+
+        if not button_data:
+            return
+
+        button_data["button"].configure(
+            fg_color="#2FA572", hover_color="#106A43"
+        )
 
     def _handle_task_error(self, task_name, exc):
         self._set_busy(False)
