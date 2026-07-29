@@ -2,6 +2,7 @@ import json
 from dataclasses import dataclass
 import os
 from pathlib import Path
+import data
 from settings import SettingsManager
 from datetime import datetime
 
@@ -12,6 +13,7 @@ class DataManager:
         self.settings = SettingsManager()
         self.project = self.Project()
         self.client = self.Client()
+        self.utility = self.Utility()
         self.system = self.System()
         self.pricing = self.Pricing()
         self.files = self.Files()
@@ -121,20 +123,37 @@ class DataManager:
             return data
         except (KeyError, IndexError, TypeError):
             return default
+        
+    @staticmethod
+    def _clean_float(value):
+        try:
+            return float(value)
+        except (ValueError, TypeError):
+            print(f"Warning: Unable to convert value '{value}' to float. Returning 0.0 instead.")
+            return 0.0
+    
+    @staticmethod
+    def _clean_int(value):
+        try:
+            return int(value)
+        except (ValueError, TypeError):
+            return 0
 
     def update_from_pricing_spreadsheet(self, get_cell_value_func):
-        self.pricing.pv_cost = get_cell_value_func(self, "Pricing Calculator", "D88")
-        self.pricing.ess_cost = get_cell_value_func(
+        self.pricing.pv_cost = self._clean_float(get_cell_value_func(self, "Pricing Calculator", "D88"))
+        self.pricing.ess_cost = self._clean_float(get_cell_value_func(
             self, "Pricing Calculator", "D89"
-        )
-        self.pricing.total_cost = get_cell_value_func(self, "Pricing Calculator", "D90")
-        self.pricing.loan_term = get_cell_value_func(self, "Pricing Calculator", "D91")
-        self.pricing.loan_interest_rate = get_cell_value_func(
-            self, "Pricing Calculator", "D92"
-        )
-        self.pricing.loan_monthly_payment = get_cell_value_func(
-            self, "Pricing Calculator", "D93"
-        )
+        ))
+        self.pricing.total_cost = self._clean_float(get_cell_value_func(self, "Pricing Calculator", "D90"))
+        self.pricing.loan_term = self._clean_int(get_cell_value_func(self, "Pricing Calculator", "D108"))
+        self.pricing.loan_interest_rate = self._clean_float(get_cell_value_func(
+            self, "Pricing Calculator", "D109"
+        ))
+        self.pricing.loan_monthly_payment = self._clean_float(get_cell_value_func(
+            self, "Pricing Calculator", "D110"
+        ))
+        self.utility.name = get_cell_value_func(self, "Edit Variables", "B4")
+        self.system.tree_trimming_required = (get_cell_value_func(self, "Edit Variables", "B5") == "TRUE")
 
     def _get_system_type(self):
         if self._get("is_roofing_only"):
@@ -172,6 +191,11 @@ class DataManager:
             city: str = ""
             region_code: str = ""
             postal_code: str = ""
+    
+    @dataclass
+    class Utility:
+        name: str = ""
+        annual_consumption: float = 0.0
 
     @dataclass
     class System:
@@ -183,8 +207,8 @@ class DataManager:
             self.panel = self.Panel()
             self.inverter = self.Inverter()
             self.battery = self.Battery()
-            self.usage = []
             self.annual_production: float = 0.0
+            self.tree_trimming_required: bool = False
 
         @dataclass
         class Panel:
@@ -223,7 +247,7 @@ class DataManager:
         cost_per_watt: float = 0.0
         loan_term: int = int(os.getenv("LOAN_TERM", "0"))
         loan_interest_rate: float = float(os.getenv("LOAN_INTEREST_RATE", "0.0"))
-        loan_monthly_payment: int = 0
+        loan_monthly_payment: float = 0
 
     @dataclass
     class Files:

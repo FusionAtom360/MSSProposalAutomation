@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import win32com.client as win32
 from pathlib import Path
@@ -126,38 +127,79 @@ class OfficeDocumentManager:
         mail.Display(False)
 
     @staticmethod
-    def _replace_in_paragraph(paragraph: Any, replacements: Mapping[str, Any]) -> None:
-        if not paragraph.runs:
+    def _replace_in_paragraph(paragraph, replacements: Mapping[str, Any]) -> None:
+        runs = paragraph.runs
+        if not runs:
             return
 
-        original = "".join(run.text for run in paragraph.runs)
-        updated = original
-        for key, value in replacements.items():
-            updated = updated.replace(str(key), str(value))
+        full_text = "".join(run.text for run in runs)
+        if not full_text:
+            return
 
-        if updated != original:
-            paragraph.runs[0].text = updated
-            for run in paragraph.runs[1:]:
-                run.text = ""
+        # Longest keys first, so a key that's a prefix of another (e.g. {{NAME}}
+        # vs {{NAME_FULL}}) can't accidentally swallow part of the longer one.
+        keys = sorted((str(k) for k in replacements if str(k)), key=len, reverse=True)
+        if not keys:
+            return
+        pattern = re.compile("|".join(re.escape(k) for k in keys))
+
+        matches = list(pattern.finditer(full_text))
+        if not matches:
+            return  # nothing to do, don't touch run formatting
+
+        # Offset of each run within the concatenated full_text.
+        run_spans = []
+        pos = 0
+        for run in runs:
+            run_spans.append((pos, pos + len(run.text)))
+            pos += len(run.text)
+
+        # Flatten full_text into segments: unchanged text and matched placeholders.
+        segments = []  # (seg_start, seg_end, is_match, replacement_or_None)
+        cursor = 0
+        for m in matches:
+            if m.start() > cursor:
+                segments.append((cursor, m.start(), False, None))
+            segments.append((m.start(), m.end(), True, str(replacements[m.group(0)])))
+            cursor = m.end()
+        if cursor < len(full_text):
+            segments.append((cursor, len(full_text), False, None))
+
+        # Rebuild each run from whichever segments overlap its original span.
+        for run, (rs, re_) in zip(runs, run_spans):
+            if rs == re_:
+                continue  # empty run
+
+            pieces = []
+            for seg_start, seg_end, is_match, replacement in segments:
+                if seg_end <= rs or seg_start >= re_:
+                    continue  # segment doesn't touch this run
+
+                if not is_match:
+                    pieces.append(full_text[max(seg_start, rs):min(seg_end, re_)])
+                else:
+                    # Emit the replacement only in the run that contains the
+                    # *start* of the match, so a placeholder spanning several
+                    # runs doesn't get duplicated.
+                    if rs <= seg_start < re_:
+                        pieces.append(replacement)
+
+            run.text = "".join(pieces)
 
     @staticmethod
-    def get_cell_value(data: DataManager, sheet_name: str, cell_ref: str) -> int:
-        for _ in (
-            data.files.project_folder.iterdir()
-            if data.files.project_folder.exists()
-            else []
-        ):
-            if data.files.pricing_spreadsheet.exists():
-                try:
-                    wb = load_workbook(
-                        data.files.pricing_spreadsheet, data_only=True, read_only=True
-                    )
-                    if sheet_name in wb.sheetnames:
-                        sheet = wb[sheet_name]
-                        cell = sheet[cell_ref]
-                        return int(cell.value) if cell.value is not None else 0
-                except Exception:
-                    return 0
+    def get_cell_value(data: DataManager, sheet_name: str, cell_ref: str) -> any:
+        if data.files.pricing_spreadsheet.exists():
+            try:
+                wb = load_workbook(
+                    data.files.pricing_spreadsheet, data_only=True, read_only=True
+                )
+                if sheet_name in wb.sheetnames:
+                    sheet = wb[sheet_name]
+                    cell = sheet[cell_ref]
+                    return cell.value
+            except Exception as e:
+                print(f"Error reading cell {cell_ref} from sheet {sheet_name}: {e}")
+                return 0
         return 0
 
     def copy_to_fileserver(self, data: DataManager, settings: SettingsManager) -> Path:
