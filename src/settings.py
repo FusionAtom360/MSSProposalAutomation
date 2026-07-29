@@ -9,17 +9,16 @@ class SettingsManager():
         self.load_settings()
         
     def load_settings(self):
-        self.auth.email = str(os.getenv("SOLARGRAF_EMAIL", ""))
-        self.auth.password = str(os.getenv("SOLARGRAF_PASSWORD", ""))
         self.repo_owner = "FusionAtom360"
         self.repo_name = "MSSProposalAutomation"
         self.repo_branch = "main"
-        
+    
+    def set_auth_key(self, key: str):
+        self.auth.key = key
         
     @dataclass
     class Auth():
-        email: str = ""
-        password: str = ""
+        key: str = ""
     
     @dataclass
     class Files():

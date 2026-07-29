@@ -1,6 +1,6 @@
 {
-    "version": "0.2.6",
+    "version": "0.2.7",
     "changelog": [
-        "Refactored data handling to allow for more flexible template variable management"
+        "Redesigned web scraper to use API instead of browser automation"
     ]
 }

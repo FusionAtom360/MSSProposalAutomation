@@ -16,71 +16,50 @@ class DataManager:
         self.pricing = self.Pricing()
         self.files = self.Files()
 
-    def load_json(self, json_data: dict):
+    def load_json(self, json_data: dict, save_to_file: bool = True):
         self.data = json_data
-        self.project.id = self.data["id"]
+        self.project.id = self._get("id", default=0)
 
-        self.client.first_name = self.data["client_name"].split()[0]
-        self.client.last_name = " ".join(self.data["client_name"].split()[1:])
-        self.client.name = self.data["client_name"]
-        self.client.phone = self.data["client_phone"]
-        self.client.email = self.data["client_email"]
-        self.client.address.street = self.data["Position"]["street"]
-        self.client.address.city = self.data["Position"]["city"]
-        self.client.address.region_code = self.data["Position"]["region_code"]
-        self.client.address.postal_code = self.data["Position"]["postal_code"]
+        self.client.first_name = self._get("client_name", default="").split()[0] if self._get("client_name", default="") else ""
+        self.client.last_name = " ".join(self._get("client_name", default=". .").split()[1:]) if self._get("client_name", default="") else ""
+        self.client.name = self._get("client_name", default="")
+        self.client.phone = self._get("client_phone", default="")
+        self.client.email = self._get("client_email", default="")
+        self.client.address.street = self._get("Position", "street", default="")
+        self.client.address.city = self._get("Position", "city", default="")
+        self.client.address.region_code = self._get("Position", "region_code", default="")
+        self.client.address.postal_code = self._get("Position", "postal_code", default="")
 
         self.project.name = self.client.name.upper()
 
         self.system.type = self._get_system_type()
-        self.system.pv_size = self.data["proposals"][0]["sizeInKw"]
-        self.system.panel.manufacturer = self.data["Materials"]["panel"][0][
-            "Manufacturer"
-        ]["name"]
-        self.system.panel.model = self.data["Materials"]["panel"][0]["name"]
-        self.system.panel.type = self.data["Materials"]["panel"][0]["type"]
-        self.system.panel.size = self.data["Materials"]["panel"][0]["size_in_watts"]
-        self.system.panel.ptc = self.data["Materials"]["panel"][0]["ptc_in_watts"]
-        self.system.panel.warranty = self.data["Materials"]["panel"][0]["warranty"]
-        self.system.panel.count = self.data["Materials"]["panel"][0]["count"]
-        self.system.panel.specsheet_url = self.data["Materials"]["panel"][0][
-            "spec_sheet"
-        ]
+        self.system.pv_size = self._get("proposals", 0, "sizeInKw")
+        self.system.panel.manufacturer = self._get("Materials", "panel", 0, "Manufacturer", "name")
+        self.system.panel.model = self._get("Materials", "panel", 0, "name")
+        self.system.panel.type = self._get("Materials", "panel", 0, "type")
+        self.system.panel.size = self._get("Materials", "panel", 0, "size_in_watts")
+        self.system.panel.ptc = self._get("Materials", "panel", 0, "ptc_in_watts")
+        self.system.panel.warranty = self._get("Materials", "panel", 0, "warranty")
+        self.system.panel.count = self._get("Materials", "panel", 0, "count", default=0)
+        self.system.panel.specsheet_url = self._get("Materials", "panel", 0, "spec_sheet")
 
-        self.system.inverter.manufacturer = self.data["Materials"]["inverter"][0][
-            "Manufacturer"
-        ]["name"]
-        self.system.inverter.model = self.data["Materials"]["inverter"][0]["name"]
-        self.system.inverter.warranty = self.data["Materials"]["inverter"][0][
-            "warranty"
-        ]
-        self.system.inverter.count = self.data["Materials"]["inverter"][0]["count"]
-        self.system.inverter.specsheet_url = self.data["Materials"]["inverter"][0][
-            "spec_sheet"
-        ]
+        self.system.inverter.manufacturer = self._get("Materials", "inverter", 0, "Manufacturer", "name")
+        self.system.inverter.model = self._get("Materials", "inverter", 0, "name")
+        self.system.inverter.warranty = self._get("Materials", "inverter", 0, "warranty")
+        self.system.inverter.count = self._get("Materials", "inverter", 0, "count", default=0)
+        self.system.inverter.specsheet_url = self._get("Materials", "inverter", 0, "spec_sheet")
 
-        self.system.battery.manufacturer = self.data["Materials"]["batteryBackup"][0][
-            "Manufacturer"
-        ]["name"]
-        self.system.battery.model = self.data["Materials"]["batteryBackup"][0]["name"]
-        self.system.battery.capacity = self.data["Materials"]["batteryBackup"][0][
-            "capacity"
-        ]
-        self.system.battery.warranty = self.data["Materials"]["batteryBackup"][0][
-            "warranty"
-        ]
-        self.system.battery.count = self.data["Materials"]["batteryBackup"][0]["count"]
-        self.system.battery.specsheet_url = self.data["Materials"]["batteryBackup"][0][
-            "spec_sheet"
-        ]
-        self.system.ess_size = self.system.battery.capacity * self.system.battery.count
+        self.system.battery.manufacturer = self._get("Materials", "batteryBackup", 0, "Manufacturer", "name")
+        self.system.battery.model = self._get("Materials", "batteryBackup", 0, "name")
+        self.system.battery.capacity = self._get("Materials", "batteryBackup", 0, "capacity")
+        self.system.battery.warranty = self._get("Materials", "batteryBackup", 0, "warranty")
+        self.system.battery.count = self._get("Materials", "batteryBackup", 0, "count", default=0)
+        self.system.battery.specsheet_url = self._get("Materials", "batteryBackup", 0, "spec_sheet")
+        
+        self.system.ess_size = self.system.battery.capacity * self.system.battery.count if self.system.battery.capacity and self.system.battery.count else 0.0
 
-        self.project.financial_id = self.data["Settings"]["Pricing"][
-            "FinancialOptions"
-        ][0]["id"]
-        self.project.proposal_id = self.data["Settings"]["Pricing"][
-            "ProjectConnection"
-        ]["proposal_id"]
+        self.project.financial_id = self._get("Settings", "Pricing", "FinancialOptions", 0, "id")
+        self.project.proposal_id = self._get("Settings", "Pricing", "ProjectConnection", "proposal_id")
 
         self.files.pricing_spreadsheet_template = (
             self.settings.files.templates_folder / "pricing_spreadsheet.xlsx"
@@ -112,18 +91,35 @@ class DataManager:
             / f"{datetime.now().strftime('%y_%m%d')} {self.client.last_name}, {self.client.first_name} {"PV" if self.system.type == 0 else "ESS" if self.system.type == 1 else "PV ESS"} Proposal.pdf"
         )
 
-        self.files.project_folder.mkdir(parents=True, exist_ok=True)
-        self.files.images_folder.mkdir(parents=True, exist_ok=True)
-        self.files.documents_folder.mkdir(parents=True, exist_ok=True)
-        self.files.specsheets_folder.mkdir(parents=True, exist_ok=True)
-        with open(self.files.project_folder / "data.json", "w") as f:
-            json.dump(self.data, f, indent=4)
+        if save_to_file:
+            self.files.project_folder.mkdir(parents=True, exist_ok=True)
+            self.files.images_folder.mkdir(parents=True, exist_ok=True)
+            self.files.documents_folder.mkdir(parents=True, exist_ok=True)
+            self.files.specsheets_folder.mkdir(parents=True, exist_ok=True)
+
+            with open(self.files.project_folder / "data.json", "w") as f:
+                json.dump(self.data, f, indent=4)
 
     def set_api_id(self, api_id):
         self.project.api_id = api_id
 
     def _set_annual_production(self, annual_production):
         self.system.annual_production = annual_production
+    
+    def _get(self, *keys, default=None) -> any:
+        data = self.data
+        try:
+            for key in keys:
+                if isinstance(key, int):
+                    data = data[key]
+                else:
+                    data = data.get(key)
+
+                if data is None:
+                    return default
+            return data
+        except (KeyError, IndexError, TypeError):
+            return default
 
     def update_from_pricing_spreadsheet(self, get_cell_value_func):
         self.pricing.pv_cost = get_cell_value_func(self, "Pricing Calculator", "D88")
@@ -140,15 +136,15 @@ class DataManager:
         )
 
     def _get_system_type(self):
-        if self.data["is_roofing_only"]:
+        if self._get("is_roofing_only"):
             return 0
-        elif self.data["is_battery_only"]:
+        elif self._get("is_battery_only"):
             return 1
         else:
             return 2
 
     def _get_ess_type(self):
-        if self.data["StorageSettings"][0]["isGridTiedBattery"]:
+        if self._get("StorageSettings", 0, "isGridTiedBattery"):
             return 1
         return 0
 

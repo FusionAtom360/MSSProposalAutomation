@@ -10,7 +10,6 @@ class TemplateManager:
         self.update(data)
 
     def update(self, data: DataManager):
-        print(data.project.name.upper())
         self.templates[r"{{JOB_NAME}}"] = data.project.name.upper()
         self.templates[r"{{CLIENT_NAME}}"] = data.client.name
         self.templates[r"{{CLIENT_FIRST_NAME}}"] = data.client.first_name
@@ -48,10 +47,9 @@ class TemplateManager:
         self.templates[r"{{BATTERY_MODEL}}"] = data.system.battery.model
         self.templates[r"{{BATTERY_CAPACITY}}"] = data.system.battery.capacity
         self.templates[r"{{BATTERY_WARRANTY}}"] = data.system.battery.warranty
-        self.templates[r"{{BATTERY_WARRANTY_CYCLES}}"] = data.system.battery.warranty * 400
+        self.templates[r"{{BATTERY_WARRANTY_CYCLES}}"] = data.system.battery.warranty * 400 if data.system.battery.warranty else None
         self.templates[r"{{BATTERY_WARRANTY_CAPACITY}}"] = 60
         self.templates[r"{{BATTERY_COUNT}}"] = data.system.battery.count
-        
 
         self.templates[r"{{SYSTEM_TYPE}}"] = data.system.type
         self.templates[r"{{PV_SIZE}}"] = data.system.pv_size

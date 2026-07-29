@@ -55,7 +55,7 @@ class App(ctk.CTk):
             font=ctk.CTkFont(size=24, weight="bold"),
         )
         title.grid(row=0, column=0, padx=20, pady=(20, 4), sticky="w")
-        
+
         subtitle = ctk.CTkLabel(
             sidebar,
             text=f"v{self.version}",
@@ -188,9 +188,7 @@ class App(ctk.CTk):
                 button.configure(state="disabled" if busy else "normal")
             else:
                 button.configure(
-                    state=(
-                        "disabled" if busy or self.data == {} else "normal"
-                    )
+                    state=("disabled" if busy or self.data == {} else "normal")
                 )
 
     def _run_task(self, task):
@@ -273,15 +271,95 @@ class App(ctk.CTk):
         self._set_busy(False)
         self._set_status(f"Loaded {customer_name} ({self.data.project.id}).")
 
+    def _select_project_dialog(self, projects: list[DataManager]) -> DataManager:
+        if not projects:
+            return DataManager()
+
+        dialog = ctk.CTkToplevel(self)
+        dialog.title("Select SolarGraf Project")
+        dialog.geometry("550x450")
+        dialog.grab_set()
+        dialog.resizable(False, False)
+
+        selected = {"project": DataManager()}
+        dialog.grid_columnconfigure(0, weight=1)
+        dialog.grid_rowconfigure(1, weight=1)
+        title = ctk.CTkLabel(
+            dialog,
+            text="Select a project to load",
+            font=ctk.CTkFont(size=18, weight="bold"),
+        )
+        title.grid(row=0, column=0, padx=20, pady=(20, 10))
+        project_names = []
+        for project in projects:
+            name = project.client.name or "Unknown Customer"
+            project_id = project.project.id or "No ID"
+
+            project_names.append(f"{name}  |  Project #{project_id}")
+
+        selected_index = {"value": 0}
+        list_frame = ctk.CTkScrollableFrame(dialog)
+        list_frame.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
+        list_frame.grid_columnconfigure(0, weight=1)
+        buttons = []
+
+        def select(index):
+            selected_index["value"] = index
+            for button in buttons:
+                button.configure(fg_color="transparent")
+            buttons[index].configure(fg_color=("gray75", "gray25"))
+
+        for index, name in enumerate(project_names):
+
+            button = ctk.CTkButton(
+                list_frame,
+                text=name,
+                anchor="w",
+                command=lambda i=index: select(i),
+            )
+            button.grid(row=index, column=0, padx=5, pady=5, sticky="ew")
+            buttons.append(button)
+        select(0)
+
+        def confirm():
+            selected["project"] = projects[selected_index["value"]]
+            dialog.destroy()
+
+        button_frame = ctk.CTkFrame(dialog)
+        button_frame.grid(row=2, column=0, padx=20, pady=15, sticky="ew")
+        button_frame.grid_columnconfigure((0, 1), weight=1)
+        ctk.CTkButton(
+            button_frame,
+            text="Cancel",
+            command=dialog.destroy,
+        ).grid(row=0, column=0, padx=5, sticky="ew")
+
+        ctk.CTkButton(
+            button_frame,
+            text="Load Project",
+            command=confirm,
+        ).grid(row=0, column=1, padx=5, sticky="ew")
+
+        self.wait_window(dialog)
+
+        return selected["project"]
+
     def load_project_from_solargraf(self):
-        payload = self.scraper.get_project_data(self.data)
+        projects_data = self.scraper.get_projects(self.settings)
+        if not projects_data:
+            raise RuntimeError("No SolarGraf projects found.")
+        selected_project = self._select_project_dialog(projects_data)
+        if not selected_project:
+            return "Project selection cancelled."
+        payload = self.scraper.get_project_data(selected_project, self.settings)
+        if not payload:
+            raise RuntimeError("Failed to retrieve project data.")
         self.data.load_json(payload)
         self.templates.update(self.data)
         if self.data.project.id == 0:
             raise RuntimeError("SolarGraf payload did not include a project ID.")
-
         self.after(0, self._mark_project_loaded)
-        return None
+        return f"Loaded project {self.data.project.id}."
 
     def open_images_folder(self):
         self._require_project()
@@ -295,7 +373,7 @@ class App(ctk.CTk):
 
     def update_project_data(self):
         self._require_project()
-        payload = self.scraper.get_project_data(self.data)
+        payload = self.scraper.get_project_data(self.data, self.settings)
         if not payload:
             raise RuntimeError("Failed to fetch project data.")
         self._mark_project_loaded()
@@ -316,7 +394,9 @@ class App(ctk.CTk):
         self._require_project()
         self.office.complete_cover_letter(self.data, self.templates)
         os.startfile(self.data.files.cover_letter_docx)
-        return f"Generated and opened cover letter at {self.data.files.cover_letter_docx}."
+        return (
+            f"Generated and opened cover letter at {self.data.files.cover_letter_docx}."
+        )
 
     def finalize_proposal_document(self):
         self._require_project()

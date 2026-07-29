@@ -56,7 +56,6 @@ class UpdateManager:
             tmp = Path(tmp)
             for file in files:
                 url = f"{self.RAW}/src/{file}"
-                print(url)
                 data = urllib.request.urlopen(url).read()
                 target = tmp / file
                 target.parent.mkdir(parents=True, exist_ok=True)

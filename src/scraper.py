@@ -1,11 +1,18 @@
-import json
-import os
-from pathlib import Path
-from dotenv import load_dotenv
 import re
 from urllib.parse import urlparse
+import os
+from pathlib import Path
+from dotenv import load_dotenv, set_key
+import json
+import dotenv
+import requests
+from settings import SettingsManager
+from token_receiver import TokenReceiver
+from http.server import HTTPServer
+import threading
 
 from playwright.sync_api import sync_playwright
+import webbrowser
 
 from data import DataManager
 
@@ -54,53 +61,23 @@ class Scraper:
         while not TARGET_PROJECT_PAGE.match(page.url):
             page.wait_for_timeout(1000)
 
-    def get_project_data(self, data: DataManager) -> dict:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(channel=self.browser_channel, headless=self.headless)
-            context = browser.new_context()
-            page = context.pages[0] if context.pages else context.new_page()
-
-            if data.project.id and data.project.api_id:
-                page.goto(
-                    f"https://app.solargraf.com/projects/{data.project.id}",
-                    wait_until="domcontentloaded",
-                )
-                self._login_if_possible(page, "Overview")
-                preview_public_pattern = re.compile(
-                    rf"^https://api\.solargraf\.com/projects/public/{re.escape(str(data.project.api_id))}(?:[/?#].*)?$"
-                )
-                with page.expect_response(
-                    lambda response: preview_public_pattern.match(response.url),
-                    timeout=120000,
-                ) as preview_response_info:
-                    page.goto(f"https://app.solargraf.com/preview/{data.project.api_id}", wait_until="domcontentloaded")
-
-                preview_payload = preview_response_info.value.json()
-                return preview_payload
-            
-            else:
-                page.goto("https://app.solargraf.com/projects", wait_until="domcontentloaded")
-                self._login_if_possible(page, "Projects")
-
-                with page.expect_response(TARGET_PROJECT_RESPONSE) as initial_response_info:
-                    page.wait_for_timeout(1000)
-
-                initial_payload = initial_response_info.value.json()
-                data.set_api_id(initial_payload.get("public_id"))
-                if not data.project.api_id:
-                    raise RuntimeError("Project response did not include public_id")
-
-                preview_public_pattern = re.compile(
-                    rf"^https://api\.solargraf\.com/projects/public/{re.escape(str(data.project.api_id))}(?:[/?#].*)?$"
-                )
-                with page.expect_response(
-                    lambda response: preview_public_pattern.match(response.url),
-                    timeout=120000,
-                ) as preview_response_info:
-                    page.goto(f"https://app.solargraf.com/preview/{data.project.api_id}", wait_until="domcontentloaded")
-
-                preview_payload = preview_response_info.value.json()
-                return preview_payload
+    def get_project_data(self, data: DataManager, settings: SettingsManager) -> dict:
+        self._refresh_auth_token(settings)
+        
+        response = requests.get(
+            f"https://api.solargraf.com/public/project/{data.project.api_id}",
+            headers={
+                "authorization": f"Bearer {settings.auth.key}",
+            },
+            timeout=30
+        )
+        if not response.ok:
+            raise RuntimeError(
+                "Failed to retrieve project data: "
+                f"HTTP {response.status_code}"
+            )
+        
+        return response.json()
     
     def get_proposal_document(self, data: DataManager) -> Path:
         with sync_playwright() as p:
@@ -164,30 +141,79 @@ class Scraper:
             request_context.dispose()
             return output_path
 
-    def get_spec_sheet(self, url: str, output_dir: str | Path | None = None):
-        if not isinstance(url, str):
-            raise ValueError(f"Spec sheet URL must be a string, got {type(url).__name__}")
-
-        normalized_url = url.strip()
-        if not normalized_url or not self._is_http_url(normalized_url):
+    def get_spec_sheet(self, url: str, output_dir: Path):
+        url = url.strip()
+        if not url or not self._is_http_url(url):
             raise ValueError(f"Spec sheet URL must be a valid HTTP(S) URL, got: {url!r}")
 
-        with sync_playwright() as p:
-            request_context = p.request.new_context()
+        response = requests.get(url, timeout=30)
+        if not response.ok:
+            raise RuntimeError(
+                "Failed to download spec sheet PDF: "
+                f"HTTP {response.status_code}"
+            )
 
-            response = request_context.get(normalized_url)
-            if not response.ok:
-                raise RuntimeError(
-                    "Failed to download spec sheet PDF: "
-                    f"HTTP {response.status}"
-                )
+        output_path = output_dir / f"{self.spec_sheet_counter}.pdf"
+        output_path.write_bytes(response.content)
 
-            target_dir = Path(output_dir) if output_dir else Path("specsheets")
-            output_path = target_dir / f"{self.spec_sheet_counter}.pdf"
-            output_path.parent.mkdir(parents=True, exist_ok=True)
-            output_path.write_bytes(response.body())
+        self.spec_sheet_counter += 1
 
-            self.spec_sheet_counter += 1
+        return output_path
+    
+    def get_projects(self, settings: SettingsManager) -> list[DataManager]:
+        self._refresh_auth_token(settings)
 
-            request_context.dispose()
-            return output_path
+        response = requests.get(
+            "https://api.solargraf.com/companies/27792/projects?sort=last_modified_at&desc=true&limit=20",
+            headers={
+                "authorization": f"Bearer {settings.auth.key}",
+            },
+            timeout=30
+        )
+        if not response.ok:
+            raise RuntimeError(
+                "Failed to retrieve projects: "
+                f"HTTP {response.status_code}"
+            )
+
+        project_data = []
+        for project in response.json()["data"]:
+            data = DataManager()
+            data.load_json(project, False)
+            data.set_api_id(project.get("public_id"))
+            project_data.append(data)
+
+        return project_data
+
+    def _refresh_auth_token(self, settings: SettingsManager) -> None:
+        if requests.get("https://api.solargraf.com/companies/27792/projects", headers={"authorization": f"Bearer {settings.auth.key}"}, timeout=30).ok:
+            return
+        if requests.get("https://api.solargraf.com/companies/27792/projects", headers={"authorization": f"Bearer {os.getenv("REQUEST_AUTH_KEY")}"}, timeout=30).ok:
+            settings.set_auth_key(str(os.getenv("REQUEST_AUTH_KEY")))
+            return
+        server = HTTPServer(
+            ("127.0.0.1", 8765),
+            TokenReceiver
+        )
+        thread = threading.Thread(
+            target=server.serve_forever,
+            daemon=True
+        )
+        thread.start()
+        print("Waiting for Solargraf authentication...")
+        webbrowser.open("https://app.solargraf.com")
+        timeout = 300
+        for _ in range(timeout):
+            if TokenReceiver.token:
+                settings.set_auth_key(TokenReceiver.token)
+                dotenv.set_key("src/.env", "REQUEST_AUTH_KEY", TokenReceiver.token)
+                server.shutdown()
+                return
+            import time
+            time.sleep(1)
+
+        server.shutdown()
+
+        raise TimeoutError(
+            "Timed out waiting for Solargraf token."
+        ) 

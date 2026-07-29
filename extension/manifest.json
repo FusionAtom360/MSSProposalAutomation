@@ -1,0 +1,32 @@
+{
+  "manifest_version": 3,
+  "name": "Solargraf Token Extractor",
+  "version": "1.0",
+  "description": "Extracts Solargraf authentication token",
+  "permissions": [
+    "tabs",
+    "storage"
+  ],
+  "host_permissions": [
+    "https://*.solargraf.com/*",
+    "http://127.0.0.1:8765/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "Solargraf Token Status",
+    "default_popup": "popup.html"
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://*.solargraf.com/*"
+      ],
+      "js": [
+        "content.js"
+      ],
+      "run_at": "document_idle"
+    }
+  ]
+}

@@ -116,12 +116,10 @@ class OfficeDocumentManager:
             f"Mid-State Solar - Proposal for {variables.resolve(r'{{SYSTEM_TYPE}}')}"
         )
         mail.To = variables.resolve(r"{{CUSTOMER_EMAIL}}")
-        print(mail.To)
 
         email_body = data.files.email_template.read_text(encoding="utf-8")
         for placeholder, replacement in variables.get_all().items():
             email_body = email_body.replace(str(placeholder), str(replacement))
-        print(email_body)
 
         mail.HtmlBody = email_body
         mail.Attachments.Add(str(data.files.final_proposal))
