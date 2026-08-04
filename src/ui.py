@@ -3,6 +3,7 @@ import threading
 import traceback
 import webbrowser
 import json
+from pathlib import Path
 
 import customtkinter as ctk
 from tkinter import messagebox
@@ -37,132 +38,205 @@ class App(ctk.CTk):
         self._busy = False
         self._action_buttons = {}
         self._completed_actions = set()
+        self._action_order = []
+        self._last_button_states = {}
+        self._last_chip_style = None
+        self._last_status_message = None
 
         self._build_layout()
 
     def _build_layout(self):
-        self.grid_columnconfigure(0, weight=0)
-        self.grid_columnconfigure(1, weight=1)
+        self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
-        sidebar = ctk.CTkFrame(self, corner_radius=18)
-        sidebar.grid(row=0, column=0, padx=(20, 12), pady=20, sticky="nsew")
-        sidebar.grid_rowconfigure(2, weight=1)
+        shell = ctk.CTkFrame(self, corner_radius=18)
+        shell.grid(row=0, column=0, padx=20, pady=20, sticky="nsew")
+        shell.grid_columnconfigure(0, weight=1)
+        shell.grid_rowconfigure(1, weight=1)
+
+        header = ctk.CTkFrame(shell, corner_radius=14)
+        header.grid(row=0, column=0, padx=16, pady=(16, 10), sticky="ew")
+        header.grid_columnconfigure(0, weight=1)
 
         title = ctk.CTkLabel(
-            sidebar,
+            header,
             text="MSS Proposal Automation",
             font=ctk.CTkFont(size=24, weight="bold"),
         )
-        title.grid(row=0, column=0, padx=20, pady=(20, 4), sticky="w")
+        title.grid(row=0, column=0, padx=16, pady=(14, 2), sticky="w")
 
         subtitle = ctk.CTkLabel(
-            sidebar,
+            header,
             text=f"v{self.version}",
-            font=ctk.CTkFont(size=14),
+            font=ctk.CTkFont(size=13),
+            text_color=("#5b6472", "#b9c1cd"),
         )
-        subtitle.grid(row=1, column=0, padx=20, pady=(0, 20), sticky="w")
+        subtitle.grid(row=1, column=0, padx=16, pady=(0, 12), sticky="w")
 
-        actions_frame = ctk.CTkScrollableFrame(
-            sidebar, corner_radius=14, label_text="Actions"
+        header_right = ctk.CTkFrame(header, fg_color="transparent")
+        header_right.grid(row=0, column=1, rowspan=2, padx=16, pady=12, sticky="ne")
+        header_right.grid_columnconfigure(0, weight=1)
+
+        self.state_chip = ctk.CTkLabel(
+            header_right,
+            text="IDLE",
+            width=90,
+            corner_radius=10,
+            fg_color=("#DBE4F0", "#2A3442"),
+            text_color=("#203047", "#D4E2F9"),
+            font=ctk.CTkFont(size=12, weight="bold"),
         )
-        actions_frame.grid(row=2, column=0, padx=16, pady=(0, 16), sticky="nsew")
-        actions_frame.grid_columnconfigure(0, weight=1)
+        self.state_chip.grid(row=0, column=0, padx=0, pady=(0, 8), sticky="e")
 
-        button_specs = [
-            ("Open Settings", self.open_settings),
-            ("Create Project in Solargraf", self.create_project_in_solargraf),
-            ("Load Project from Solargraf", self.load_project_from_solargraf),
-            ("Open Images Folder", self.open_images_folder),
-            ("Open Project in Solargraf", self.open_project_in_solargraf),
-            ("Open Pricing Spreadsheet", self.open_pricing_spreadsheet),
-            ("Update Project from Solargraf", self.update_project_data),
-            ("Download Proposal Document", self.download_proposal_document),
-            ("Generate Cover Letter", self.generate_cover_letter),
-            ("Finalize Proposal", self.finalize_proposal)
+        quick = ctk.CTkFrame(header_right)
+        quick.grid(row=1, column=0, padx=0, pady=0, sticky="e")
+        for col in range(4):
+            quick.grid_columnconfigure(col, weight=1)
+
+        quick_buttons = [
+            ("Settings", self.open_settings),
+            ("Pricing Template", self.open_pricing_template),
+            ("Cover Template", self.open_cover_template),
+            ("Email Template", self.open_email_template),
+        ]
+        for index, (label, command) in enumerate(quick_buttons):
+            ctk.CTkButton(
+                quick,
+                text=label,
+                width=116,
+                height=30,
+                font=ctk.CTkFont(size=12),
+                command=lambda fn=command: self._run_task(fn),
+            ).grid(row=0, column=index, padx=3, pady=0, sticky="ew")
+
+        body = ctk.CTkFrame(shell, corner_radius=14)
+        body.grid(row=1, column=0, padx=16, pady=(0, 16), sticky="nsew")
+        body.grid_columnconfigure(0, weight=0)
+        body.grid_columnconfigure(1, weight=1)
+        body.grid_rowconfigure(0, weight=1)
+
+        workflow = ctk.CTkFrame(body, corner_radius=12)
+        workflow.grid(row=0, column=0, padx=20, pady=12, sticky="nsew")
+        workflow.grid_columnconfigure(0, weight=1)
+
+        section_specs = [
+            (
+                "Setup",
+                [
+                    ("Create Project in Solargraf", self.create_project_in_solargraf),
+                    ("Load Project from Solargraf", self.load_project_from_solargraf),
+                ],
+            ),
+            (
+                "Project",
+                [
+                    ("Open Images Folder", self.open_images_folder),
+                    ("Open Project in Solargraf", self.open_project_in_solargraf),
+                    ("Update Project from Solargraf", self.update_project_data),
+                    ("Download Proposal Document", self.download_proposal_document),
+                ],
+            ),
+            (
+                "Documents",
+                [
+                    ("Open Pricing Spreadsheet", self.open_pricing_spreadsheet),
+                    ("Generate Cover Letter", self.generate_cover_letter),
+                    ("Finalize Proposal", self.finalize_proposal),
+                ],
+            ),
         ]
 
-        for row, (label, command) in enumerate(button_specs):
-            button = ctk.CTkButton(
-                actions_frame, text=label, command=lambda fn=command: self._run_task(fn)
-            )
-            button.grid(row=row, column=0, padx=8, pady=(0, 10), sticky="ew")
-            if row > 2:
-                button.configure(state="disabled")
-            self._action_buttons[command.__name__] = {
-                "button": button,
-                "text": label,
-            }
+        row = 0
+        for section_title, actions in section_specs:
+            ctk.CTkLabel(
+                workflow,
+                text=section_title,
+                font=ctk.CTkFont(size=15, weight="bold"),
+            ).grid(row=row, column=0, padx=12, pady=(6, 8), sticky="w")
+            row += 1
 
-        self.status_label = ctk.CTkLabel(
-            sidebar,
-            text="",
-            justify="left",
-            wraplength=280,
-            anchor="w",
-        )
-        self.status_label.grid(row=3, column=0, padx=20, pady=(0, 18), sticky="ew")
+            for label, command in actions:
+                button = ctk.CTkButton(
+                    workflow,
+                    text=label,
+                    command=lambda fn=command: self._run_task(fn),
+                )
+                button.grid(row=row, column=0, padx=12, pady=(0, 10), sticky="ew")
 
-        content = ctk.CTkFrame(self, corner_radius=18)
-        content.grid(row=0, column=1, padx=(12, 20), pady=20, sticky="nsew")
+                command_name = command.__name__
+                self._action_order.append(command_name)
+                self._action_buttons[command_name] = {
+                    "button": button,
+                    "text": label,
+                }
+                if len(self._action_order) > 2:
+                    button.configure(state="disabled")
+                row += 1
+
+        content = ctk.CTkFrame(body, corner_radius=12)
+        content.grid(row=0, column=1, padx=(8, 12), pady=12, sticky="nsew")
         content.grid_columnconfigure(0, weight=1)
         content.grid_rowconfigure(2, weight=1)
 
-        header = ctk.CTkFrame(content, corner_radius=14)
-        header.grid(row=0, column=0, padx=18, pady=(18, 12), sticky="ew")
-        header.grid_columnconfigure((0, 1), weight=1)
+        project_header = ctk.CTkFrame(content, corner_radius=10)
+        project_header.grid(row=0, column=0, padx=12, pady=(12, 8), sticky="ew")
+        project_header.grid_columnconfigure(0, weight=1)
 
         self.project_title = ctk.CTkLabel(
-            header,
+            project_header,
             text="No customer loaded",
             font=ctk.CTkFont(size=20, weight="bold"),
             anchor="w",
         )
-        self.project_title.grid(row=0, column=0, padx=16, pady=(14, 4), sticky="w")
+        self.project_title.grid(row=0, column=0, padx=14, pady=(12, 2), sticky="w")
 
         self.project_hint = ctk.CTkLabel(
-            header,
-            text="",
+            project_header,
+            text="Load a SolarGraf project to begin",
             text_color=("#5b6472", "#b9c1cd"),
             anchor="w",
             justify="left",
-            wraplength=520,
+            wraplength=560,
         )
-        self.project_hint.grid(row=1, column=0, padx=16, pady=(0, 14), sticky="w")
+        self.project_hint.grid(row=1, column=0, padx=14, pady=(0, 12), sticky="w")
 
-        summary = ctk.CTkFrame(content, corner_radius=14)
-        summary.grid(row=1, column=0, padx=18, pady=(0, 12), sticky="ew")
-        summary.grid_columnconfigure((0, 1), weight=1)
+        summary = ctk.CTkFrame(content, corner_radius=10)
+        summary.grid(row=1, column=0, padx=12, pady=(0, 8), sticky="ew")
+        summary.grid_columnconfigure((0, 1, 2), weight=1)
 
         self.summary_labels = {}
         summary_fields = [
             ("Project ID", "project_id"),
-            ("Size (kW)", "size_kw"),
+            ("API ID", "api_id"),
+            ("Size", "size_kw"),
+            ("Customer", "customer"),
+            ("Utility", "utility"),
+            ("System", "system_type"),
         ]
 
         for index, (label, key) in enumerate(summary_fields):
-            row = 0
-            column = index
-            field = ctk.CTkFrame(summary, corner_radius=10)
-            field.grid(row=row, column=column, padx=12, pady=12, sticky="ew")
+            row_idx = index // 3
+            col_idx = index % 3
+            field = ctk.CTkFrame(summary, corner_radius=8)
+            field.grid(row=row_idx, column=col_idx, padx=8, pady=8, sticky="ew")
             field.grid_columnconfigure(0, weight=1)
 
             ctk.CTkLabel(field, text=label, text_color=("#5b6472", "#b9c1cd")).grid(
-                row=0, column=0, padx=12, pady=(10, 0), sticky="w"
+                row=0, column=0, padx=10, pady=(8, 0), sticky="w"
             )
             value_label = ctk.CTkLabel(
                 field,
-                text="Not loaded",
-                font=ctk.CTkFont(size=16, weight="bold"),
+                text="--",
+                font=ctk.CTkFont(size=14, weight="bold"),
                 anchor="w",
                 justify="left",
-                wraplength=240,
+                wraplength=220,
             )
-            value_label.grid(row=1, column=0, padx=12, pady=(0, 10), sticky="w")
+            value_label.grid(row=1, column=0, padx=10, pady=(0, 8), sticky="w")
             self.summary_labels[key] = value_label
 
-        log_frame = ctk.CTkFrame(content, corner_radius=14)
-        log_frame.grid(row=2, column=0, padx=18, pady=(0, 18), sticky="nsew")
+        log_frame = ctk.CTkFrame(content, corner_radius=10)
+        log_frame.grid(row=2, column=0, padx=12, pady=(0, 12), sticky="nsew")
         log_frame.grid_columnconfigure(0, weight=1)
         log_frame.grid_rowconfigure(1, weight=1)
 
@@ -175,8 +249,36 @@ class App(ctk.CTk):
         self.log_box.configure(state="disabled")
 
     def _set_status(self, message):
-        self.status_label.configure(text=message)
+        if message == self._last_status_message:
+            return
+        self._last_status_message = message
         self._log(message)
+
+    def _set_state_chip(self, state_text, busy=False):
+        style = {
+            "text": state_text,
+            "fg_color": ("#DBE4F0", "#2A3442"),
+            "text_color": ("#203047", "#D4E2F9"),
+        }
+
+        if busy:
+            style = {
+                "text": state_text,
+                "fg_color": ("#F6DDAC", "#6D5420"),
+                "text_color": ("#4A3203", "#FFF0CA"),
+            }
+        elif self.data.project.id:
+            style = {
+                "text": state_text,
+                "fg_color": ("#CFEFD9", "#174B2D"),
+                "text_color": ("#0D4426", "#CFF7DE"),
+            }
+
+        style_key = (style["text"], style["fg_color"], style["text_color"])
+        if style_key == self._last_chip_style:
+            return
+        self._last_chip_style = style_key
+        self.state_chip.configure(**style)
 
     def _log(self, message):
         self.log_box.configure(state="normal")
@@ -186,20 +288,27 @@ class App(ctk.CTk):
 
     def _set_busy(self, busy):
         self._busy = busy
+        self._set_state_chip("WORKING" if busy else ("READY" if self.data.project.id else "IDLE"), busy=busy)
 
-        for index, button_data in enumerate(self._action_buttons.values()):
+        for index, action_name in enumerate(self._action_order):
+            button_data = self._action_buttons[action_name]
             button = button_data["button"]
 
             if busy:
-                button.configure(state="disabled")
+                self._set_button_state(action_name, button, "disabled")
                 continue
 
-            if index < 3:
-                button.configure(state="normal")
+            if index < 2:
+                self._set_button_state(action_name, button, "normal")
             else:
-                button.configure(
-                    state=("normal" if self.data.project.id else "disabled")
-                )
+                target_state = "normal" if self.data.project.id else "disabled"
+                self._set_button_state(action_name, button, target_state)
+
+    def _set_button_state(self, action_name, button, state):
+        if self._last_button_states.get(action_name) == state:
+            return
+        self._last_button_states[action_name] = state
+        button.configure(state=state)
 
     def _run_task(self, task):
         if self._busy:
@@ -223,7 +332,7 @@ class App(ctk.CTk):
                 self.after(0, lambda: self._handle_task_result(task.__name__, result))
 
         self._set_busy(True)
-        self._set_status(f"Running {task.__name__.replace('_', ' ')}...")
+        self._set_status(f"Running: {task.__name__.replace('_', ' ')}")
         threading.Thread(target=worker, daemon=True).start()
 
     def _handle_task_result(self, task_name, result):
@@ -232,15 +341,17 @@ class App(ctk.CTk):
         self._completed_actions.add(task_name)
         self._update_button_status(task_name)
 
-        if task_name == "load_project_from_solargraf":
+        if task_name in {"load_project_from_solargraf", "update_project_data"}:
+            self._mark_project_loaded()
+            if result:
+                self._log(result)
             return
 
         if result:
-            self._set_status(result)
+            self._set_status(f"Done: {task_name.replace('_', ' ')}")
+            self._log(result)
         else:
-            self._set_status(
-                f"{task_name.replace('_', ' ').capitalize()} complete."
-            )
+            self._set_status(f"Done: {task_name.replace('_', ' ')}")
 
     def _update_button_status(self, task_name):
         button_data = self._action_buttons.get(task_name)
@@ -249,14 +360,15 @@ class App(ctk.CTk):
             return
 
         button_data["button"].configure(
-            fg_color="#2FA572", hover_color="#106A43"
+            fg_color="#174B2D", hover_color="#106A43"
         )
 
     def _handle_task_error(self, task_name, exc):
         self._set_busy(False)
-        message = f"{task_name.replace('_', ' ').capitalize()} failed: {exc} {traceback.format_exc()}"
-        self._set_status(message)
-        messagebox.showerror("MSS Proposal Automation", message)
+        detail = f"{task_name.replace('_', ' ').capitalize()} failed: {exc}"
+        self._set_status(f"Failed: {task_name.replace('_', ' ')}")
+        self._log(f"{detail}\n{traceback.format_exc()}")
+        messagebox.showerror("MSS Proposal Automation", detail)
 
     def _require_project(self):
         if self.data == {} or self.data.project.id == 0:
@@ -279,22 +391,37 @@ class App(ctk.CTk):
 
     def _update_summary(self):
         self.summary_labels["project_id"].configure(
-            text=str(self.data.project.id or "Not loaded")
+            text=str(self.data.project.id or "--")
+        )
+        self.summary_labels["api_id"].configure(
+            text=str(self.data.project.api_id or "--")
         )
         if self.data.system.pv_size == 0:
-            size_text = "Not loaded"
+            size_text = "--"
         else:
             size_text = f"{self.data.system.pv_size:g} kW"
         self.summary_labels["size_kw"].configure(text=size_text)
+        self.summary_labels["customer"].configure(text=self.data.client.name or "--")
+        self.summary_labels["utility"].configure(text=self.data.utility.name or "--")
+
+        if self.data.system.type == 0:
+            system_text = "PV"
+        elif self.data.system.type == 1:
+            system_text = "ESS"
+        elif self.data.system.type == 2:
+            system_text = "PV + ESS"
+        else:
+            system_text = "--"
+        self.summary_labels["system_type"].configure(text=system_text)
 
     def _mark_project_loaded(self):
         customer_name = self.data.client.name or "Unknown customer"
         address = self.data.client.address.street or "Address not available"
         self.project_title.configure(text=customer_name)
-        self.project_hint.configure(text=f"{address}")
+        self.project_hint.configure(text=address)
         self._update_summary()
-        self._set_busy(False)
-        self._set_status(f"Loaded {customer_name} ({self.data.project.id}).")
+        self._set_status(f"Loaded: {self.data.project.id}")
+        self._log(f"Loaded {customer_name} ({self.data.project.id}).")
 
     def _select_project_dialog(self, projects: list[dict]) -> dict:
         if not projects:
@@ -374,9 +501,33 @@ class App(ctk.CTk):
             os.startfile(self.settings.files.settings)
         return f"Opened settings file at {self.settings.files.settings}."
 
+    def _open_template(self, template_path: Path, label: str):
+        if not template_path.is_file():
+            raise FileNotFoundError(f"{label} template not found at {template_path}")
+        os.startfile(template_path)
+        return f"Opened {label} template at {template_path}."
+
+    def open_pricing_template(self):
+        template_path = self.settings.files.templates_folder / "pricing_spreadsheet.xlsx"
+        return self._open_template(template_path, "pricing spreadsheet")
+
+    def open_cover_template(self):
+        if self.data.files.cover_letter_template and self.data.files.cover_letter_template.is_file():
+            return self._open_template(self.data.files.cover_letter_template, "cover letter")
+
+        candidates = sorted(self.settings.files.templates_folder.glob("cover_letter_*.docx"))
+        if candidates:
+            return self._open_template(candidates[0], "cover letter")
+
+        raise FileNotFoundError("No cover letter template found in templates folder")
+
+    def open_email_template(self):
+        template_path = self.settings.files.templates_folder / "email.html"
+        return self._open_template(template_path, "email")
+
     def create_project_in_solargraf(self):
         webbrowser.open("https://app.solargraf.com/projects/create")
-        return f"Opened SolarGraf project creation page in web browser."
+        return "Opened SolarGraf project creation page in web browser."
 
     def load_project_from_solargraf(self):
         projects_data = self.scraper.get_projects(self.settings)
@@ -393,7 +544,6 @@ class App(ctk.CTk):
         self.templates.update(self.data)
         if self.data.project.id == 0:
             raise RuntimeError("SolarGraf payload did not include a project ID.")
-        self.after(0, self._mark_project_loaded)
         return f"Loaded project {self.data.project.id}."
 
     def open_images_folder(self):
@@ -413,7 +563,6 @@ class App(ctk.CTk):
             raise RuntimeError("Failed to fetch project data.")
         self.data.load_json(payload)
         self.templates.update(self.data)
-        self._mark_project_loaded()
         return f"Updated project data for {self.data.project.id}."
 
     def download_proposal_document(self):

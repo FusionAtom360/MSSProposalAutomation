@@ -1,7 +1,6 @@
 {
     "version": "0.2.8",
     "changelog": [
-        "Improved final proposal handling with specsheets",
-        "Added support for PG&E on email template"
+        "Redesigned UI to be more user-friendly and intuitive"
     ]
 }
