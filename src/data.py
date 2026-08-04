@@ -217,6 +217,7 @@ class DataManager:
             self.references.loan_interest_rate = sheet["B8"].value
             self.references.loan_monthly_payment = sheet["B9"].value
             self.references.panel_ptc = sheet["B10"].value
+            self.references.inverter_efficiency = sheet["B11"].value
 
         if self.files.pricing_spreadsheet.is_file():
             workbook = load_workbook(
@@ -226,10 +227,10 @@ class DataManager:
             self.system.tree_trimming_required = sheet[
                 self.references.tree_trimming_required
             ].value
-            self.system.ess_type = sheet[self.references.ess_type].value
-            self.pricing.pv_cost = float(sheet[self.references.pv_cost].value)
-            self.pricing.ess_cost = float(sheet[self.references.ess_cost].value)
-            self.pricing.total_cost = float(sheet[self.references.total_cost].value)
+            self.system.ess_type = 0 if (sheet[self.references.ess_type].value == "Grid-Tied") else 1
+            self.pricing.pv_cost = float(sheet[self.references.pv_cost].value) if sheet[self.references.pv_cost].value is not None else 0.0
+            self.pricing.ess_cost = float(sheet[self.references.ess_cost].value) if sheet[self.references.ess_cost].value is not None else 0.0
+            self.pricing.total_cost = float(sheet[self.references.total_cost].value) if sheet[self.references.total_cost].value is not None else 0.0
             self.pricing.loan_term = int(sheet[self.references.loan_term].value)
             self.pricing.loan_interest_rate = float(
                 sheet[self.references.loan_interest_rate].value
@@ -237,7 +238,8 @@ class DataManager:
             self.pricing.loan_monthly_payment = math.ceil(
                 sheet[self.references.loan_monthly_payment].value
             )
-            self.system.panel.ptc = int(sheet[self.references.panel_ptc].value)
+            self.system.panel.ptc = int(float(sheet[self.references.panel_ptc].value))
+            self.system.inverter.efficiency = float(sheet[self.references.inverter_efficiency].value) if sheet[self.references.inverter_efficiency].value is not None else 0.97
 
     def _get_system_type(self):
         if self._get("is_roofing_only"):
@@ -327,6 +329,7 @@ class DataManager:
         class Inverter:
             manufacturer: str = ""
             model: str = ""
+            efficiency: float = 0.0
             warranty: int = 0
             count: int = 0
             specsheet_url: str = ""
@@ -380,3 +383,4 @@ class DataManager:
         loan_interest_rate: str = ""
         loan_monthly_payment: str = ""
         panel_ptc: str = ""
+        inverter_efficiency: str = ""

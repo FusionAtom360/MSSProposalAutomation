@@ -1,7 +1,7 @@
 {
     "version": "0.2.8",
     "changelog": [
-        "Updated variable handling with settings file",
-        "Pulled PTC values from CEC modules spreadsheet"
+        "Improved final proposal handling with specsheets",
+        "Added support for PG&E on email template"
     ]
 }

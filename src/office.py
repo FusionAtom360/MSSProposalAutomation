@@ -72,7 +72,7 @@ class OfficeDocumentManager:
 
         if data.files.settings.is_file():
             workbook = load_workbook(data.files.settings, data_only=True, read_only=True)
-            sheet = workbook["Specsheets"]
+            sheet = workbook["Spec Sheets"]
             for row in sheet.iter_rows(min_row=2, values_only=True):
                 model, value = row[0], row[1]
                 if model and value is not None:
@@ -126,7 +126,7 @@ class OfficeDocumentManager:
         mail.Subject = (
             f"Mid-State Solar - Proposal for {variables.resolve(r'{{SYSTEM_TYPE}}')}"
         )
-        mail.To = variables.resolve(r"{{CUSTOMER_EMAIL}}")
+        mail.To = variables.resolve(r"{{CLIENT_EMAIL}}")
 
         email_body = data.files.email_template.read_text(encoding="utf-8")
         for placeholder, replacement in variables.get_all().items():
