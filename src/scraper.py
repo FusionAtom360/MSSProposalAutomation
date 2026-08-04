@@ -61,10 +61,13 @@ class Scraper:
         while not TARGET_PROJECT_PAGE.match(page.url):
             page.wait_for_timeout(1000)
 
-    def get_project_data(self, data: DataManager, settings: SettingsManager) -> dict:
+    def get_project_data(self, project_api_id: str, settings: SettingsManager) -> dict:
         self._refresh_auth_token(settings)
+        if not project_api_id:
+            raise RuntimeError("Cannot retrieve project data without a project API ID.")
+
         response = requests.get(
-            f"https://api.solargraf.com/public/project/{data.project.api_id}",
+            f"https://api.solargraf.com/public/project/{project_api_id}",
             headers={
                 "authorization": f"Bearer {settings.auth.key}",
             },
@@ -92,10 +95,6 @@ class Scraper:
             f"?lang=en"
         )
         response = requests.get(download_url, timeout=30)
-        print(download_url)
-        print(response.status_code)
-        print(response.headers.get("content-type"))
-        print(response.text[:200])
         if not response.ok:
             raise RuntimeError(
                 "Failed to download proposal PDF: "
@@ -159,7 +158,7 @@ class Scraper:
 
         return output_path
     
-    def get_projects(self, settings: SettingsManager) -> list[DataManager]:
+    def get_projects(self, settings: SettingsManager) -> list[dict]:
         self._refresh_auth_token(settings)
 
         response = requests.get(
@@ -176,10 +175,14 @@ class Scraper:
             )
 
         project_data = []
-        for project in response.json()["data"]:
-            data = DataManager()
-            data.load_json(project, False)
-            project_data.append(data)
+        for project in response.json().get("data", []):
+            project_data.append(
+                {
+                    "id": project.get("id"),
+                    "name": project.get("client_name") or "Unknown Customer",
+                    "api_id": project.get("public_id", ""),
+                }
+            )
 
         return project_data
 

@@ -1,8 +1,11 @@
 import json
 from dataclasses import dataclass
+import math
 import os
 from pathlib import Path
-import data
+from typing import Any
+
+from openpyxl import load_workbook
 from settings import SettingsManager
 from datetime import datetime
 
@@ -17,53 +20,111 @@ class DataManager:
         self.system = self.System()
         self.pricing = self.Pricing()
         self.files = self.Files()
+        self.references = self.References()
 
     def load_json(self, json_data: dict, save_to_file: bool = True):
         self.data = json_data
         self.project.id = self._get("id", default=0)
         self.project.api_id = self._get("public_id", default="")
-
-        self.client.first_name = self._get("client_name", default="").split()[0] if self._get("client_name", default="") else ""
-        self.client.last_name = " ".join(self._get("client_name", default=". .").split()[1:]) if self._get("client_name", default="") else ""
+        self.files.modules_spreadsheet = (
+                    self.settings.files.templates_folder / "modules.xlsx"
+                )
+        
+        self.client.first_name = (
+            self._get("client_name", default="").split()[0]
+            if self._get("client_name", default="")
+            else ""
+        )
+        self.client.last_name = (
+            " ".join(self._get("client_name", default=". .").split()[1:])
+            if self._get("client_name", default="")
+            else ""
+        )
         self.client.name = self._get("client_name", default="")
         self.client.phone = self._get("client_phone", default="")
         self.client.email = self._get("client_email", default="")
         self.client.address.street = self._get("Position", "street", default="")
         self.client.address.city = self._get("Position", "city", default="")
-        self.client.address.region_code = self._get("Position", "region_code", default="")
-        self.client.address.postal_code = self._get("Position", "postal_code", default="")
+        self.client.address.region_code = self._get(
+            "Position", "region_code", default=""
+        )
+        self.client.address.postal_code = self._get(
+            "Position", "postal_code", default=""
+        )
 
         self.project.name = self.client.name.upper()
 
         self.system.type = self._get_system_type()
         self.system.pv_size = self._get("proposals", 0, "sizeInKw")
-        self.system.panel.manufacturer = self._get("Materials", "panel", 0, "Manufacturer", "name")
+        self.system.panel.manufacturer = self._get(
+            "Materials", "panel", 0, "Manufacturer", "name"
+        )
         self.system.panel.model = self._get("Materials", "panel", 0, "name")
         self.system.panel.type = self._get("Materials", "panel", 0, "type")
         self.system.panel.size = self._get("Materials", "panel", 0, "size_in_watts")
-        self.system.panel.ptc = self._get("Materials", "panel", 0, "ptc_in_watts")
+        self.system.panel.ptc = self._get_panel_ptc()
         self.system.panel.warranty = self._get("Materials", "panel", 0, "warranty")
         self.system.panel.count = self._get("Materials", "panel", 0, "count", default=0)
-        self.system.panel.specsheet_url = self._get("Materials", "panel", 0, "spec_sheet")
+        self.system.panel.specsheet_url = self._get(
+            "Materials", "panel", 0, "spec_sheet"
+        )
 
-        self.system.inverter.manufacturer = self._get("Materials", "inverter", 0, "Manufacturer", "name")
+        self.utility.name = self._get(
+            "Settings",
+            "Pricing",
+            "ProjectConnection",
+            "genability_lse_name",
+            default="",
+        )
+        self.utility.annual_consumption = self._calculate_annual_consumption(
+            self._get("Settings", "Pricing", "ProjectConnection", "Bills", default="")
+        )
+
+        self.system.inverter.manufacturer = self._get(
+            "Materials", "inverter", 0, "Manufacturer", "name"
+        )
         self.system.inverter.model = self._get("Materials", "inverter", 0, "name")
-        self.system.inverter.warranty = self._get("Materials", "inverter", 0, "warranty")
-        self.system.inverter.count = self._get("Materials", "inverter", 0, "count", default=0)
-        self.system.inverter.specsheet_url = self._get("Materials", "inverter", 0, "spec_sheet")
+        self.system.inverter.warranty = self._get(
+            "Materials", "inverter", 0, "warranty"
+        )
+        self.system.inverter.count = self._get(
+            "Materials", "inverter", 0, "count", default=0
+        )
+        self.system.inverter.specsheet_url = self._get(
+            "Materials", "inverter", 0, "spec_sheet"
+        )
 
-        self.system.battery.manufacturer = self._get("Materials", "batteryBackup", 0, "Manufacturer", "name")
+        self.system.battery.manufacturer = self._get(
+            "Materials", "batteryBackup", 0, "Manufacturer", "name"
+        )
         self.system.battery.model = self._get("Materials", "batteryBackup", 0, "name")
-        self.system.battery.capacity = self._get("Materials", "batteryBackup", 0, "capacity")
-        self.system.battery.warranty = self._get("Materials", "batteryBackup", 0, "warranty")
-        self.system.battery.count = self._get("Materials", "batteryBackup", 0, "count", default=0)
-        self.system.battery.specsheet_url = self._get("Materials", "batteryBackup", 0, "spec_sheet")
-        
-        self.system.ess_size = self.system.battery.capacity * self.system.battery.count if self.system.battery.capacity and self.system.battery.count else 0.0
+        self.system.battery.capacity = self._get(
+            "Materials", "batteryBackup", 0, "capacity"
+        )
+        self.system.battery.warranty = self._get(
+            "Materials", "batteryBackup", 0, "warranty"
+        )
+        self.system.battery.count = self._get(
+            "Materials", "batteryBackup", 0, "count", default=0
+        )
+        self.system.battery.specsheet_url = self._get(
+            "Materials", "batteryBackup", 0, "spec_sheet"
+        )
 
-        self.project.financial_id = self._get("Settings", "Pricing", "FinancialOptions", 0, "id")
-        self.project.proposal_id = self._get("Settings", "Pricing", "ProjectConnection", "proposal_id")
+        self.system.ess_size = (
+            self.system.battery.capacity * self.system.battery.count
+            if self.system.battery.capacity and self.system.battery.count
+            else 0.0
+        )
 
+        self.project.financial_id = self._get(
+            "Settings", "Pricing", "FinancialOptions", 0, "id"
+        )
+        self.project.proposal_id = self._get(
+            "Settings", "Pricing", "ProjectConnection", "proposal_id"
+        )
+
+        self.files.settings = self.settings.files.templates_folder / "settings.xlsx"
         self.files.pricing_spreadsheet_template = (
             self.settings.files.templates_folder / "pricing_spreadsheet.xlsx"
         )
@@ -108,8 +169,8 @@ class DataManager:
 
     def _set_annual_production(self, annual_production):
         self.system.annual_production = annual_production
-    
-    def _get(self, *keys, default=None) -> any:
+
+    def _get(self, *keys, default=None) -> Any:
         data = self.data
         try:
             for key in keys:
@@ -123,15 +184,17 @@ class DataManager:
             return data
         except (KeyError, IndexError, TypeError):
             return default
-        
+
     @staticmethod
     def _clean_float(value):
         try:
             return float(value)
         except (ValueError, TypeError):
-            print(f"Warning: Unable to convert value '{value}' to float. Returning 0.0 instead.")
+            print(
+                f"Warning: Unable to convert value '{value}' to float. Returning 0.0 instead."
+            )
             return 0.0
-    
+
     @staticmethod
     def _clean_int(value):
         try:
@@ -139,21 +202,42 @@ class DataManager:
         except (ValueError, TypeError):
             return 0
 
-    def update_from_pricing_spreadsheet(self, get_cell_value_func):
-        self.pricing.pv_cost = self._clean_float(get_cell_value_func(self, "Pricing Calculator", "D88"))
-        self.pricing.ess_cost = self._clean_float(get_cell_value_func(
-            self, "Pricing Calculator", "D89"
-        ))
-        self.pricing.total_cost = self._clean_float(get_cell_value_func(self, "Pricing Calculator", "D90"))
-        self.pricing.loan_term = self._clean_int(get_cell_value_func(self, "Pricing Calculator", "D108"))
-        self.pricing.loan_interest_rate = self._clean_float(get_cell_value_func(
-            self, "Pricing Calculator", "D109"
-        ))
-        self.pricing.loan_monthly_payment = self._clean_float(get_cell_value_func(
-            self, "Pricing Calculator", "D110"
-        ))
-        self.utility.name = get_cell_value_func(self, "Edit Variables", "B4")
-        self.system.tree_trimming_required = (get_cell_value_func(self, "Edit Variables", "B5") == "TRUE")
+    def update_from_pricing_spreadsheet(self):
+        if self.files.settings.is_file():
+            workbook = load_workbook(
+                self.files.settings, data_only=True, read_only=True
+            )
+            sheet = workbook["Spreadsheet"]
+            self.references.tree_trimming_required = sheet["B2"].value
+            self.references.ess_type = sheet["B3"].value
+            self.references.pv_cost = sheet["B4"].value
+            self.references.ess_cost = sheet["B5"].value
+            self.references.total_cost = sheet["B6"].value
+            self.references.loan_term = sheet["B7"].value
+            self.references.loan_interest_rate = sheet["B8"].value
+            self.references.loan_monthly_payment = sheet["B9"].value
+            self.references.panel_ptc = sheet["B10"].value
+
+        if self.files.pricing_spreadsheet.is_file():
+            workbook = load_workbook(
+                self.files.pricing_spreadsheet, data_only=True, read_only=True
+            )
+            sheet = workbook["Pricing Calculator"]
+            self.system.tree_trimming_required = sheet[
+                self.references.tree_trimming_required
+            ].value
+            self.system.ess_type = sheet[self.references.ess_type].value
+            self.pricing.pv_cost = float(sheet[self.references.pv_cost].value)
+            self.pricing.ess_cost = float(sheet[self.references.ess_cost].value)
+            self.pricing.total_cost = float(sheet[self.references.total_cost].value)
+            self.pricing.loan_term = int(sheet[self.references.loan_term].value)
+            self.pricing.loan_interest_rate = float(
+                sheet[self.references.loan_interest_rate].value
+            )
+            self.pricing.loan_monthly_payment = math.ceil(
+                sheet[self.references.loan_monthly_payment].value
+            )
+            self.system.panel.ptc = int(sheet[self.references.panel_ptc].value)
 
     def _get_system_type(self):
         if self._get("is_roofing_only"):
@@ -163,10 +247,28 @@ class DataManager:
         else:
             return 2
 
-    def _get_ess_type(self):
-        if self._get("StorageSettings", 0, "isGridTiedBattery"):
-            return 1
-        return 0
+    def _calculate_annual_consumption(self, bills):
+        total_consumption = 0.0
+        # TODO: Rewrite for real data
+        for bill in bills:
+            consumption = bill.get("consumptionInKwh", 0.0)
+            total_consumption += consumption
+        return total_consumption
+
+    def _get_panel_ptc(self) -> int | None:
+        if self.system.panel.ptc is not None and self.system.panel.ptc > 0:
+            return self.system.panel.ptc
+        elif self.files.modules_spreadsheet.is_file():
+            workbook = load_workbook(
+                self.files.modules_spreadsheet, data_only=True, read_only=True
+            )
+            sheet = workbook["PV Module-Full"]
+            for row in sheet.iter_rows(min_row=2, values_only=True):
+                model, ptc = row[1], row[5]
+                if self.system.panel.model is not None and model is not None:
+                    if self.system.panel.model.lower() in str(model).lower():
+                        return ptc
+        return None
 
     @dataclass
     class Project:
@@ -191,7 +293,7 @@ class DataManager:
             city: str = ""
             region_code: str = ""
             postal_code: str = ""
-    
+
     @dataclass
     class Utility:
         name: str = ""
@@ -254,6 +356,8 @@ class DataManager:
         pricing_spreadsheet_template: Path = Path()
         cover_letter_template: Path = Path()
         solargraf_proposal_template: Path = Path()
+        modules_spreadsheet: Path = Path()
+        settings: Path = Path()
         email_template: Path = Path()
         project_folder: Path = Path()
         images_folder: Path = Path()
@@ -264,3 +368,15 @@ class DataManager:
         cover_letter_docx: Path = Path()
         cover_letter_pdf: Path = Path()
         final_proposal: Path = Path()
+
+    @dataclass
+    class References:
+        tree_trimming_required: str = ""
+        ess_type: str = ""
+        pv_cost: str = ""
+        ess_cost: str = ""
+        total_cost: str = ""
+        loan_term: str = ""
+        loan_interest_rate: str = ""
+        loan_monthly_payment: str = ""
+        panel_ptc: str = ""

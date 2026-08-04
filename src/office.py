@@ -1,17 +1,15 @@
 from __future__ import annotations
 
-import os
 import re
 import shutil
 import win32com.client as win32
 from pathlib import Path
 from datetime import datetime
 from typing import Any, Mapping
-from urllib.parse import urlparse
 from openpyxl import load_workbook
 from docx import Document
 import docx2pdf
-from pypdf import PdfWriter
+from pypdf import PdfReader, PdfWriter
 from scraper import Scraper
 from data import DataManager
 from settings import SettingsManager
@@ -42,20 +40,16 @@ class OfficeDocumentManager:
                                             placeholder, str(replacement)
                                         )
                                     )
-                                except ValueError:
+                                except (ValueError, TypeError):
                                     cell.value = cell.value.replace(
                                         placeholder, str(replacement)
                                     )
-
-        sheet = workbook["Edit Variables"]
-        for key, value in variables.get_all().items():
-            sheet.append([key, value])
-
+                                    
         workbook.save(data.files.pricing_spreadsheet)
         return data.files.pricing_spreadsheet
 
     def complete_cover_letter(self, data: DataManager, variables) -> Path:
-        data.update_from_pricing_spreadsheet(self.get_cell_value)
+        data.update_from_pricing_spreadsheet()
         variables.update(data)
         document = Document(str(data.files.cover_letter_template))
 
@@ -65,7 +59,7 @@ class OfficeDocumentManager:
         document.save(str(data.files.cover_letter_docx))
         return data.files.cover_letter_docx
 
-    def finalize_proposal(self, data: DataManager, scraper: Scraper) -> Path:
+    def finalize_proposal(self, data: DataManager, variables, scraper: Scraper) -> Path:
         docx2pdf.convert(
             str(data.files.cover_letter_docx), str(data.files.cover_letter_pdf)
         )
@@ -73,34 +67,50 @@ class OfficeDocumentManager:
         writer = PdfWriter()
         writer.append(str(data.files.cover_letter_pdf))
         writer.append(str(data.files.solargraf_proposal))
+        
+        specsheet_pages = {}
 
+        if data.files.settings.is_file():
+            workbook = load_workbook(data.files.settings, data_only=True, read_only=True)
+            sheet = workbook["Specsheets"]
+            for row in sheet.iter_rows(min_row=2, values_only=True):
+                model, value = row[0], row[1]
+                if model and value is not None:
+                    if model == variables.resolve(r'{{PANEL_MODEL}}'):
+                        specsheet_pages['panel'] = int(value)
+                    elif model == variables.resolve(r'{{INVERTER_MODEL}}'):
+                        specsheet_pages['inverter'] = int(value)
+                    elif model == variables.resolve(r'{{BATTERY_MODEL}}'):
+                        specsheet_pages['battery'] = int(value)
+            workbook.close()
+        
         data.files.specsheets_folder.mkdir(parents=True, exist_ok=True)
 
+        def download_and_trim(url: str, specsheet_name: str) -> None:
+            specsheet_path = scraper.download(
+                url, output_dir=data.files.specsheets_folder
+            )
+            max_pages = specsheet_pages.get(specsheet_name)
+            if max_pages is None:
+                return
+
+            reader = PdfReader(str(specsheet_path))
+            writer = PdfWriter()
+            for page in reader.pages[:max_pages]:
+                writer.add_page(page)
+
+            with open(specsheet_path, "wb") as output_file:
+                writer.write(output_file)
+
         if data.system.type == 0:
-            scraper.download(
-                data.system.panel.specsheet_url, output_dir=data.files.specsheets_folder
-            )
-            scraper.download(
-                data.system.inverter.specsheet_url,
-                output_dir=data.files.specsheets_folder,
-            )
+            download_and_trim(data.system.panel.specsheet_url, "panel")
+            download_and_trim(data.system.inverter.specsheet_url, "inverter")
         if data.system.type == 1:
-            scraper.download(
-                data.system.battery.specsheet_url,
-                output_dir=data.files.specsheets_folder,
-            )
+            download_and_trim(data.system.battery.specsheet_url, "battery")
         if data.system.type == 2:
-            scraper.download(
-                data.system.panel.specsheet_url, output_dir=data.files.specsheets_folder
-            )
-            scraper.download(
-                data.system.inverter.specsheet_url,
-                output_dir=data.files.specsheets_folder,
-            )
-            scraper.download(
-                data.system.battery.specsheet_url,
-                output_dir=data.files.specsheets_folder,
-            )
+            download_and_trim(data.system.panel.specsheet_url, "panel")
+            download_and_trim(data.system.inverter.specsheet_url, "inverter")
+            download_and_trim(data.system.battery.specsheet_url, "battery")
 
         for specsheet_file in data.files.specsheets_folder.glob("*.pdf"):
             writer.append(str(specsheet_file))
@@ -108,7 +118,7 @@ class OfficeDocumentManager:
         return data.files.final_proposal
 
     def generate_email(self, data: DataManager, variables) -> None:
-        data.update_from_pricing_spreadsheet(self.get_cell_value)
+        data.update_from_pricing_spreadsheet()
         variables.update(data)
 
         outlook = win32.Dispatch("Outlook.Application")
@@ -187,7 +197,7 @@ class OfficeDocumentManager:
             run.text = "".join(pieces)
 
     @staticmethod
-    def get_cell_value(data: DataManager, sheet_name: str, cell_ref: str) -> any:
+    def get_cell_value(data: DataManager, sheet_name: str, cell_ref: str) -> Any:
         if data.files.pricing_spreadsheet.exists():
             try:
                 wb = load_workbook(

@@ -6,6 +6,7 @@ import tempfile
 import threading
 import customtkinter as ctk
 import traceback
+import subprocess
 
 class UpdateManager:
     REPO = "FusionAtom360/MSSProposalAutomation"
@@ -66,6 +67,7 @@ class UpdateManager:
                 dst = self.src / file
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
+        subprocess.run(["python", "-m", "pip", "install", "-r", str(self.src / "requirements.txt")], check=True)
                 
     def run_ui(self):
         ctk.set_appearance_mode("System")

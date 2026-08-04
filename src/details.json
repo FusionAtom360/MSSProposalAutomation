@@ -1,6 +1,7 @@
 {
-    "version": "0.2.7",
+    "version": "0.2.8",
     "changelog": [
-        "Redesigned web scraper to use API instead of browser automation"
+        "Updated variable handling with settings file",
+        "Pulled PTC values from CEC modules spreadsheet"
     ]
 }

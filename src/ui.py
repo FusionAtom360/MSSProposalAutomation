@@ -70,16 +70,16 @@ class App(ctk.CTk):
         actions_frame.grid_columnconfigure(0, weight=1)
 
         button_specs = [
+            ("Open Settings", self.open_settings),
+            ("Create Project in Solargraf", self.create_project_in_solargraf),
             ("Load Project from Solargraf", self.load_project_from_solargraf),
             ("Open Images Folder", self.open_images_folder),
             ("Open Project in Solargraf", self.open_project_in_solargraf),
             ("Open Pricing Spreadsheet", self.open_pricing_spreadsheet),
-            ("Update Project Data", self.update_project_data),
+            ("Update Project from Solargraf", self.update_project_data),
             ("Download Proposal Document", self.download_proposal_document),
             ("Generate Cover Letter", self.generate_cover_letter),
-            ("Finalize Proposal Document", self.finalize_proposal_document),
-            ("Draft Email to Customer", self.draft_email_to_customer),
-            ("Copy to FileServer", self.copy_to_fileserver),
+            ("Finalize Proposal", self.finalize_proposal)
         ]
 
         for row, (label, command) in enumerate(button_specs):
@@ -87,7 +87,7 @@ class App(ctk.CTk):
                 actions_frame, text=label, command=lambda fn=command: self._run_task(fn)
             )
             button.grid(row=row, column=0, padx=8, pady=(0, 10), sticky="ew")
-            if row > 0:
+            if row > 2:
                 button.configure(state="disabled")
             self._action_buttons[command.__name__] = {
                 "button": button,
@@ -190,17 +190,20 @@ class App(ctk.CTk):
         for index, button_data in enumerate(self._action_buttons.values()):
             button = button_data["button"]
 
-            if index == 0:
-                button.configure(state="disabled" if busy else "normal")
+            if busy:
+                button.configure(state="disabled")
+                continue
+
+            if index < 3:
+                button.configure(state="normal")
             else:
                 button.configure(
-                    state=("disabled" if busy or not self.data.project.id else "normal")
+                    state=("normal" if self.data.project.id else "disabled")
                 )
 
     def _run_task(self, task):
         if self._busy:
             return
-
         def worker():
             try:
                 result = task()
@@ -212,6 +215,7 @@ class App(ctk.CTk):
                 KeyError,
                 TypeError,
             ) as exc:
+                traceback.print_exc()
                 self.after(
                     0, lambda error=exc: self._handle_task_error(task.__name__, error)
                 )
@@ -292,9 +296,9 @@ class App(ctk.CTk):
         self._set_busy(False)
         self._set_status(f"Loaded {customer_name} ({self.data.project.id}).")
 
-    def _select_project_dialog(self, projects: list[DataManager]) -> DataManager:
+    def _select_project_dialog(self, projects: list[dict]) -> dict:
         if not projects:
-            return DataManager()
+            return {}
 
         dialog = ctk.CTkToplevel(self)
         dialog.title("Select SolarGraf Project")
@@ -302,7 +306,7 @@ class App(ctk.CTk):
         dialog.grab_set()
         dialog.resizable(False, False)
 
-        selected = {"project": DataManager()}
+        selected = {"project": {}}
         dialog.grid_columnconfigure(0, weight=1)
         dialog.grid_rowconfigure(1, weight=1)
         title = ctk.CTkLabel(
@@ -313,8 +317,8 @@ class App(ctk.CTk):
         title.grid(row=0, column=0, padx=20, pady=(20, 10))
         project_names = []
         for project in projects:
-            name = project.client.name or "Unknown Customer"
-            project_id = project.project.id or "No ID"
+            name = project.get("name") or "Unknown Customer"
+            project_id = project.get("id") or "No ID"
 
             project_names.append(f"{name}  |  Project #{project_id}")
 
@@ -365,6 +369,15 @@ class App(ctk.CTk):
 
         return selected["project"]
 
+    def open_settings(self):
+        if self.settings.files.settings.is_file():
+            os.startfile(self.settings.files.settings)
+        return f"Opened settings file at {self.settings.files.settings}."
+
+    def create_project_in_solargraf(self):
+        webbrowser.open("https://app.solargraf.com/projects/create")
+        return f"Opened SolarGraf project creation page in web browser."
+
     def load_project_from_solargraf(self):
         projects_data = self.scraper.get_projects(self.settings)
         if not projects_data:
@@ -372,7 +385,8 @@ class App(ctk.CTk):
         selected_project = self._select_project_dialog(projects_data)
         if not selected_project:
             return "Project selection cancelled."
-        payload = self.scraper.get_project_data(selected_project, self.settings)
+        project_api_id = str(selected_project.get("api_id") or "")
+        payload = self.scraper.get_project_data(project_api_id, self.settings)
         if not payload:
             raise RuntimeError("Failed to retrieve project data.")
         self.data.load_json(payload)
@@ -394,9 +408,11 @@ class App(ctk.CTk):
 
     def update_project_data(self):
         self._require_project()
-        payload = self.scraper.get_project_data(self.data, self.settings)
+        payload = self.scraper.get_project_data(self.data.project.api_id, self.settings)
         if not payload:
             raise RuntimeError("Failed to fetch project data.")
+        self.data.load_json(payload)
+        self.templates.update(self.data)
         self._mark_project_loaded()
         return f"Updated project data for {self.data.project.id}."
 
@@ -419,22 +435,13 @@ class App(ctk.CTk):
             f"Generated and opened cover letter at {self.data.files.cover_letter_docx}."
         )
 
-    def finalize_proposal_document(self):
+    def finalize_proposal(self):
         self._require_project()
-        self.office.finalize_proposal(self.data, self.scraper)
+        self.office.finalize_proposal(self.data, self.templates, self.scraper)
         os.startfile(self.data.files.final_proposal)
-        return f"Final proposal document created at {self.data.files.final_proposal}."
-
-    def draft_email_to_customer(self):
-        self._require_project()
         self.office.generate_email(self.data, self.templates)
-        return f"Drafted email to customer with proposal attached."
-
-    def copy_to_fileserver(self):
-        self._require_project()
         self.office.copy_to_fileserver(self.data, self.settings)
-        return f"Copied project {self.data.project.id} to {self.settings.files.bids_folder}."
-
+        return f"Final proposal document created at {self.data.files.final_proposal}.\nDrafted email to customer with proposal attached.\nCopied project {self.data.project.id} to {self.settings.files.bids_folder}."
 
 if __name__ == "__main__":
     app = App()
