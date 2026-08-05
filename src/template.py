@@ -79,6 +79,7 @@ class TemplateManager:
         self.templates[r"{{BATTERY_PLURAL}}"] = "Batteries" if data.system.battery.count > 1 else "Battery"
         self.templates[r"{{UTILITY_LINK}}"] = self.resolve(r"{{UTILITY_LINK_MID}}") if data.utility.name == "Modesto Irrigation District" else self.resolve(r"{{UTILITY_LINK_PGE}}")
         self.templates[r"{{APPLICATION_FEE}}"] = self.resolve(r'{{APPLICATION_FEE_MID}}') if data.utility.name == "Modesto Irrigation District" else self.resolve(r'{{APPLICATION_FEE_PGE}}')
+        self.templates[r"{{VARIANCE_APPROVAL}}"] = self.resolve(r'{{VARIANCE_APPROVAL_MID}}') if data.utility.name == "Modesto Irrigation District" else ""
 
         self.templates[r"{{PV_COST}}"] = f"${int(data.pricing.pv_cost):,}"
         self.templates[r"{{ESS_COST}}"] = f"${int(data.pricing.ess_cost):,}"
