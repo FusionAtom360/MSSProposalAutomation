@@ -101,6 +101,7 @@ class TemplateManager:
                 placeholder, value = row[0], row[1]
                 if placeholder and value is not None:
                     self.templates[str(placeholder)] = str(value)
+            workbook.close()
     
 
     def get_all(self):

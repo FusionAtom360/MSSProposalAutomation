@@ -1,6 +1,6 @@
 {
-    "version": "0.3.1",
+    "version": "0.3.2",
     "changelog": [
-        "Redesigned UI to be more user-friendly and intuitive"
+        "Small template bugfix and Excel file handling sharing violation fixes"
     ]
 }

@@ -218,6 +218,7 @@ class DataManager:
             self.references.loan_monthly_payment = sheet["B9"].value
             self.references.panel_ptc = sheet["B10"].value
             self.references.inverter_efficiency = sheet["B11"].value
+            workbook.close()
 
         if self.files.pricing_spreadsheet.is_file():
             workbook = load_workbook(
@@ -240,6 +241,10 @@ class DataManager:
             )
             self.system.panel.ptc = int(float(sheet[self.references.panel_ptc].value))
             self.system.inverter.efficiency = float(sheet[self.references.inverter_efficiency].value) if sheet[self.references.inverter_efficiency].value is not None else 0.97
+            self.system.panel.count = int(sheet["C12"].value) if sheet["C12"].value is not None else self.system.panel.count
+            self.system.inverter.count = int(sheet["C13"].value) if sheet["C13"].value is not None else self.system.inverter.count
+            self.system.battery.count = int(sheet["C16"].value) if sheet["C16"].value is not None else self.system.battery.count
+            workbook.close()
 
     def _get_system_type(self):
         if self._get("is_roofing_only"):
@@ -269,7 +274,9 @@ class DataManager:
                 model, ptc = row[1], row[5]
                 if self.system.panel.model is not None and model is not None:
                     if self.system.panel.model.lower() in str(model).lower():
+                        workbook.close()
                         return ptc
+            workbook.close()
         return None
 
     @dataclass

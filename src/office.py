@@ -46,6 +46,7 @@ class OfficeDocumentManager:
                                     )
                                     
         workbook.save(data.files.pricing_spreadsheet)
+        workbook.close()
         return data.files.pricing_spreadsheet
 
     def complete_cover_letter(self, data: DataManager, variables) -> Path:
@@ -206,6 +207,7 @@ class OfficeDocumentManager:
                 if sheet_name in wb.sheetnames:
                     sheet = wb[sheet_name]
                     cell = sheet[cell_ref]
+                    wb.close()
                     return cell.value
             except Exception as e:
                 print(f"Error reading cell {cell_ref} from sheet {sheet_name}: {e}")
