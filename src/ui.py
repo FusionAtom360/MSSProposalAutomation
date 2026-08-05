@@ -133,13 +133,13 @@ class App(ctk.CTk):
                     ("Open Images Folder", self.open_images_folder),
                     ("Open Project in Solargraf", self.open_project_in_solargraf),
                     ("Update Project from Solargraf", self.update_project_data),
-                    ("Download Proposal Document", self.download_proposal_document),
                 ],
             ),
             (
                 "Documents",
                 [
                     ("Open Pricing Spreadsheet", self.open_pricing_spreadsheet),
+                    ("Download Proposal Document", self.download_proposal_document),
                     ("Generate Cover Letter", self.generate_cover_letter),
                     ("Finalize Proposal", self.finalize_proposal),
                 ],
