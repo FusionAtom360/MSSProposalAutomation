@@ -53,7 +53,7 @@ class TemplateManager:
         self.templates[r"{{INVERTER_EFFICIENCY}}"] = f"{round(data.system.inverter.efficiency*100)}" if data.system.inverter.efficiency else None
 
         self.templates[r"{{BATTERY_MANUFACTURER}}"] = self.aliases.get(data.system.battery.manufacturer, data.system.battery.manufacturer)
-        self.templates[r"{{BATTERY_MANUFACTURER_UPPERCASE}}"] = self.aliases.get(data.system.battery.manufacturer, data.system.battery.manufacturer).upper()
+        self.templates[r"{{BATTERY_MANUFACTURER_UPPERCASE}}"] = self.aliases.get(data.system.battery.manufacturer, data.system.battery.manufacturer).upper() if data.system.battery.manufacturer else None
         self.templates[r"{{BATTERY_MODEL}}"] = self.aliases.get(data.system.battery.model, data.system.battery.model)
         self.templates[r"{{BATTERY_CAPACITY}}"] = data.system.battery.capacity
         self.templates[r"{{BATTERY_WARRANTY}}"] = data.system.battery.warranty

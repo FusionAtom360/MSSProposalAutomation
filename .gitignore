@@ -1,3 +1,6 @@
 /.venv/
 /projects/
 /.vscode/
+/logs/
+/dev/
+/__pycache__/

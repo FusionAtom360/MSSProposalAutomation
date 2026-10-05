@@ -7,11 +7,19 @@ import threading
 import customtkinter as ctk
 import traceback
 import subprocess
+import sys
+import logging
+
+
+logger = logging.getLogger("mss_proposal_automation.update")
 
 class UpdateManager:
     REPO = "FusionAtom360/MSSProposalAutomation"
     RAW = "https://raw.githubusercontent.com/FusionAtom360/MSSProposalAutomation/main"
     VENV = ".venv"
+    window: ctk.CTk | None
+    status: ctk.CTkLabel | None
+    progress: ctk.CTkProgressBar | None
 
     EXCLUDE = {
         ".env",
@@ -21,6 +29,9 @@ class UpdateManager:
     def __init__(self):
         self.root = Path(__file__).parent.parent
         self.src = self.root / "src"
+        self.window = None
+        self.status = None
+        self.progress = None
         with open(self.src / "details.json", encoding="utf-8") as f:
             self.details = json.load(f)
         self.current = self.details["version"]
@@ -67,7 +78,10 @@ class UpdateManager:
                 dst = self.src / file
                 dst.parent.mkdir(parents=True, exist_ok=True)
                 shutil.copy2(src, dst)
-        subprocess.run(["python", "-m", "pip", "install", "-r", str(self.src / "requirements.txt")], check=True)
+        subprocess.run(
+            [sys.executable, "-m", "pip", "install", "-r", str(self.src / "requirements.txt")],
+            check=True,
+        )
                 
     def run_ui(self):
         ctk.set_appearance_mode("System")
@@ -123,7 +137,8 @@ class UpdateManager:
                     )
                 )
 
-        except Exception as e:
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, RuntimeError, ValueError) as e:  # pyright: ignore[reportGeneralException]
+            logger.exception("Update check failed")
             error_message = (
                 f"Update failed:\n"
                 f"{type(e).__name__}: {e}\n\n"
@@ -159,7 +174,8 @@ class UpdateManager:
                 )
             )
 
-        except Exception as e:
+        except (OSError, urllib.error.URLError, json.JSONDecodeError, RuntimeError, ValueError, subprocess.CalledProcessError) as e:  # pyright: ignore[reportGeneralException]
+            logger.exception("Update download failed")
             error_message = (
                 f"Update failed:\n"
                 f"{type(e).__name__}: {e}\n\n"

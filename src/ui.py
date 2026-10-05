@@ -1,4 +1,5 @@
 import os
+import logging
 import threading
 import traceback
 import webbrowser
@@ -17,6 +18,9 @@ from template import TemplateManager
 
 ctk.set_appearance_mode("System")
 ctk.set_default_color_theme("blue")
+
+
+logger = logging.getLogger("mss_proposal_automation.ui")
 
 
 class App(ctk.CTk):
@@ -281,6 +285,7 @@ class App(ctk.CTk):
         self.state_chip.configure(**style)
 
     def _log(self, message):
+        logger.info(message)
         self.log_box.configure(state="normal")
         self.log_box.insert("end", f"{message}\n")
         self.log_box.see("end")
@@ -313,10 +318,11 @@ class App(ctk.CTk):
     def _run_task(self, task):
         if self._busy:
             return
+
         def worker():
             try:
                 result = task()
-            except (
+            except (  # pyright: ignore[reportGeneralException]
                 RuntimeError,
                 FileNotFoundError,
                 OSError,
@@ -324,9 +330,13 @@ class App(ctk.CTk):
                 KeyError,
                 TypeError,
             ) as exc:
-                traceback.print_exc()
+                traceback_text = traceback.format_exc()
+                logger.exception("Task failed: %s", task.__name__)
                 self.after(
-                    0, lambda error=exc: self._handle_task_error(task.__name__, error)
+                    0,
+                    lambda error=exc, trace=traceback_text: self._handle_task_error(
+                        task.__name__, error, trace
+                    ),
                 )
             else:
                 self.after(0, lambda: self._handle_task_result(task.__name__, result))
@@ -363,11 +373,24 @@ class App(ctk.CTk):
             fg_color="#174B2D", hover_color="#106A43"
         )
 
-    def _handle_task_error(self, task_name, exc):
+    def _handle_task_error(self, task_name, exc, traceback_text=""):
         self._set_busy(False)
         detail = f"{task_name.replace('_', ' ').capitalize()} failed: {exc}"
         self._set_status(f"Failed: {task_name.replace('_', ' ')}")
-        self._log(f"{detail}\n{traceback.format_exc()}")
+        self._log(f"{detail}\n{traceback_text or traceback.format_exc()}")
+        messagebox.showerror("MSS Proposal Automation", detail)
+
+    def report_callback_exception(self, exc, val, tb):
+        logger.exception("Unhandled Tk callback exception", exc_info=(exc, val, tb))
+        self._set_busy(False)
+        detail = f"{exc.__name__}: {val}"
+        self._set_status("Failed: ui callback")
+        self._log(
+            "Unhandled UI exception\n"
+            + detail
+            + "\n"
+            + "".join(traceback.format_exception(exc, val, tb))
+        )
         messagebox.showerror("MSS Proposal Automation", detail)
 
     def _require_project(self):
@@ -593,5 +616,16 @@ class App(ctk.CTk):
         return f"Final proposal document created at {self.data.files.final_proposal}.\nDrafted email to customer with proposal attached.\nCopied project {self.data.project.id} to {self.settings.files.bids_folder}."
 
 if __name__ == "__main__":
-    app = App()
-    app.mainloop()
+    from dotenv import load_dotenv
+    load_dotenv()
+    
+    from app_logging import configure_logging, install_exception_hooks
+    logger = configure_logging()
+    install_exception_hooks(logger)
+
+    try:    
+        app = App()
+        app.mainloop()
+    except Exception:
+        logging.getLogger("mss_proposal_automation").exception("Application startup failed")
+        raise
