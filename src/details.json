@@ -1,6 +1,9 @@
 {
-    "version": "0.3.2",
+    "version": "0.4.0",
     "changelog": [
-        "Small template bugfix and Excel file handling sharing violation fixes"
+        "Fixes issue with API failures relating to auth tokens",
+        "Added cover letter for PV only",
+        "Improved codebase quality and maintainability",
+        "Improved data structure validation and handling"
     ]
 }

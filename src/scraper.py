@@ -5,7 +5,7 @@ from pathlib import Path
 from dotenv import load_dotenv, set_key
 import json
 import dotenv
-import requests
+
 from settings import SettingsManager
 from token_receiver import TokenReceiver
 from http.server import HTTPServer
@@ -15,8 +15,9 @@ from playwright.sync_api import sync_playwright
 import webbrowser
 
 from data import DataManager
+from http_client import AuthenticatedHttpClient
 
-load_dotenv()
+load_dotenv(Path(__file__).with_name(".env"))
 
 
 TARGET_PROJECT_PAGE = re.compile(r"^https://app\.solargraf\.com/projects/[^/?#]+$")
@@ -28,6 +29,7 @@ class Scraper:
         self.headless = headless
         self.browser_channel = browser_channel
         self.spec_sheet_counter = 0
+        self.http = AuthenticatedHttpClient()
         
     def _dismiss_cookie_banner(self, page) -> None:
         reject_button = page.locator("#onetrust-reject-all-handler")
@@ -66,12 +68,12 @@ class Scraper:
         if not project_api_id:
             raise RuntimeError("Cannot retrieve project data without a project API ID.")
 
-        response = requests.get(
+        response = self.http.get(
             f"https://api.solargraf.com/public/project/{project_api_id}",
+            auth_key=settings.auth.key,
             headers={
                 "authorization": f"Bearer {settings.auth.key}",
             },
-            timeout=30
         )
         if not response.ok:
             raise RuntimeError(
@@ -82,6 +84,7 @@ class Scraper:
         return response.json()
     
     def get_proposal_document(self, data: DataManager) -> Path:
+        data.validate_for_document_generation("proposal_download")
         base_url = "https://app.solargraf.com"
         pdf_path = (
             f"/financial/pdf/"
@@ -94,7 +97,7 @@ class Scraper:
             f"{pdf_path}"
             f"?lang=en"
         )
-        response = requests.get(download_url, timeout=30)
+        response = self.http.get(download_url)
         if not response.ok:
             raise RuntimeError(
                 "Failed to download proposal PDF: "
@@ -120,7 +123,9 @@ class Scraper:
             raise ValueError(f"URL must be a valid HTTP(S) URL, got: {url!r}")
 
         with sync_playwright() as p:
-            request_context = p.request.new_context()
+            request_context = p.request.new_context(
+                timeout=self.http.timeout * 1000
+            )
 
             response = request_context.get(normalized_url)
             if not response.ok:
@@ -144,7 +149,7 @@ class Scraper:
         if not url or not self._is_http_url(url):
             raise ValueError(f"Spec sheet URL must be a valid HTTP(S) URL, got: {url!r}")
 
-        response = requests.get(url, timeout=30)
+        response = self.http.get(url)
         if not response.ok:
             raise RuntimeError(
                 "Failed to download spec sheet PDF: "
@@ -161,12 +166,12 @@ class Scraper:
     def get_projects(self, settings: SettingsManager) -> list[dict]:
         self._refresh_auth_token(settings)
 
-        response = requests.get(
+        response = self.http.get(
             "https://api.solargraf.com/companies/27792/projects?sort=last_modified_at&desc=true&limit=20",
+            auth_key=settings.auth.key,
             headers={
                 "authorization": f"Bearer {settings.auth.key}",
             },
-            timeout=30
         )
         if not response.ok:
             raise RuntimeError(
@@ -187,9 +192,23 @@ class Scraper:
         return project_data
 
     def _refresh_auth_token(self, settings: SettingsManager) -> None:
-        if requests.get("https://api.solargraf.com/companies/27792/projects", headers={"authorization": f"Bearer {settings.auth.key}"}, timeout=30).ok:
+        endpoint = "https://api.solargraf.com/companies/27792/projects"
+        if self.http.get(endpoint, auth_key=settings.auth.key).ok:
             return
-        if requests.get("https://api.solargraf.com/companies/27792/projects", headers={"authorization": f"Bearer {os.getenv("REQUEST_AUTH_KEY")}"}, timeout=30).ok:
+
+        request_auth_key = os.getenv("REQUEST_AUTH_KEY", "")
+        if request_auth_key and self.http.get(
+            endpoint, auth_key=request_auth_key
+        ).ok:
+            settings.set_auth_key(request_auth_key)
+            return
+
+        self._wait_for_auth_token(settings)
+
+    def _wait_for_auth_token(self, settings: SettingsManager) -> None:
+        if self.http.get("https://api.solargraf.com/companies/27792/projects", headers={"authorization": f"Bearer {settings.auth.key}"}, timeout=30).ok:
+            return
+        if self.http.get("https://api.solargraf.com/companies/27792/projects", headers={"authorization": f"Bearer {os.getenv("REQUEST_AUTH_KEY")}"}, timeout=30).ok:
             settings.set_auth_key(str(os.getenv("REQUEST_AUTH_KEY")))
             return
         server = HTTPServer(
@@ -207,6 +226,11 @@ class Scraper:
         for _ in range(timeout):
             if TokenReceiver.token:
                 settings.set_auth_key(TokenReceiver.token)
+                set_key(
+                    str(Path(__file__).with_name(".env")),
+                    "REQUEST_AUTH_KEY",
+                    TokenReceiver.token,
+                )
                 dotenv.set_key("src/.env", "REQUEST_AUTH_KEY", TokenReceiver.token)
                 server.shutdown()
                 return

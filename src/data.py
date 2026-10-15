@@ -167,6 +167,121 @@ class DataManager:
     def set_api_id(self, api_id):
         self.project.api_id = api_id
 
+    def validate_for_document_generation(self, document_kind: str) -> None:
+        """Raise a descriptive error when a document prerequisite is missing."""
+        required_values = {
+            "project ID": self.project.id,
+            "SolarGraf project ID": self.project.api_id,
+            "proposal ID": self.project.proposal_id,
+            "financial ID": self.project.financial_id,
+            "client name": self.client.name,
+            "client street address": self.client.address.street,
+            "client city": self.client.address.city,
+            "client region": self.client.address.region_code,
+            "client postal code": self.client.address.postal_code,
+            "utility": self.utility.name,
+        }
+        missing = [
+            label
+            for label, value in required_values.items()
+            if value is None or (isinstance(value, str) and not value.strip())
+        ]
+        if not isinstance(self.project.id, (int, float)) or self.project.id <= 0:
+            missing.append("project ID")
+
+        if self.system.type not in (0, 1, 2):
+            missing.append("a supported system type")
+
+        if self.system.type in (0, 2):
+            required_values = {
+                "PV size": self.system.pv_size,
+                "panel manufacturer": self.system.panel.manufacturer,
+                "panel model": self.system.panel.model,
+                "panel size": self.system.panel.size,
+                "panel count": self.system.panel.count,
+                "inverter manufacturer": self.system.inverter.manufacturer,
+                "inverter model": self.system.inverter.model,
+                "inverter count": self.system.inverter.count,
+            }
+            missing.extend(
+                label
+                for label, value in required_values.items()
+                if value is None
+                or (isinstance(value, str) and not value.strip())
+                or (isinstance(value, (int, float)) and value <= 0)
+            )
+
+        if self.system.type in (1, 2):
+            required_values = {
+                "battery manufacturer": self.system.battery.manufacturer,
+                "battery model": self.system.battery.model,
+                "battery capacity": self.system.battery.capacity,
+                "battery count": self.system.battery.count,
+            }
+            missing.extend(
+                label
+                for label, value in required_values.items()
+                if value is None
+                or (isinstance(value, str) and not value.strip())
+                or (isinstance(value, (int, float)) and value <= 0)
+            )
+
+        if document_kind == "final_proposal":
+            required_urls = {}
+            if self.system.type in (0, 2):
+                required_urls.update(
+                    {
+                        "panel specification-sheet URL": self.system.panel.specsheet_url,
+                        "inverter specification-sheet URL": self.system.inverter.specsheet_url,
+                    }
+                )
+            if self.system.type in (1, 2):
+                required_urls["battery specification-sheet URL"] = (
+                    self.system.battery.specsheet_url
+                )
+            missing.extend(
+                label
+                for label, value in required_urls.items()
+                if value is None or (isinstance(value, str) and not value.strip())
+            )
+
+        required_files = {}
+        if document_kind == "pricing":
+            required_files = {
+                "pricing spreadsheet template": self.files.pricing_spreadsheet_template,
+                "settings workbook": self.files.settings,
+            }
+        elif document_kind == "cover_letter":
+            required_files = {
+                "cover letter template": self.files.cover_letter_template,
+                "settings workbook": self.files.settings,
+                "pricing spreadsheet": self.files.pricing_spreadsheet,
+            }
+        elif document_kind == "proposal_download":
+            required_files = {}
+        elif document_kind == "final_proposal":
+            required_files = {
+                "cover letter document": self.files.cover_letter_docx,
+                "SolarGraf proposal PDF": self.files.solargraf_proposal,
+                "pricing spreadsheet": self.files.pricing_spreadsheet,
+                "settings workbook": self.files.settings,
+            }
+        else:
+            raise ValueError(f"Unknown document generation stage: {document_kind}")
+
+        missing.extend(
+            label
+            for label, path in required_files.items()
+            if not path or not Path(path).is_file()
+        )
+
+        if missing:
+            details = "\n".join(f"- {item}" for item in dict.fromkeys(missing))
+            raise ValueError(
+                f"Cannot generate {document_kind.replace('_', ' ')} until "
+                f"the following prerequisites are provided:\n{details}"
+            )
+
     def _set_annual_production(self, annual_production):
         self.system.annual_production = annual_production
 
@@ -247,6 +362,9 @@ class DataManager:
             workbook.close()
 
     def _get_system_type(self):
+        battery_data = self._get("Materials", "batteryBackup", 0, default=None)
+        if not isinstance(battery_data, dict) or not battery_data:
+            return 0
         if self._get("is_roofing_only"):
             return 0
         elif self._get("is_battery_only"):

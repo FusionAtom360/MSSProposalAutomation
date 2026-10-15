@@ -23,6 +23,7 @@ class OfficeDocumentManager:
         self.alias_mapping = {}
 
     def complete_pricing_spreadsheet(self, data: DataManager, variables) -> Path:
+        data.validate_for_document_generation("pricing")
 
         variables.update(data)
         workbook = load_workbook(data.files.pricing_spreadsheet_template)
@@ -50,6 +51,7 @@ class OfficeDocumentManager:
         return data.files.pricing_spreadsheet
 
     def complete_cover_letter(self, data: DataManager, variables) -> Path:
+        data.validate_for_document_generation("cover_letter")
         data.update_from_pricing_spreadsheet()
         variables.update(data)
         document = Document(str(data.files.cover_letter_template))
@@ -61,6 +63,7 @@ class OfficeDocumentManager:
         return data.files.cover_letter_docx
 
     def finalize_proposal(self, data: DataManager, variables, scraper: Scraper) -> Path:
+        data.validate_for_document_generation("final_proposal")
         docx2pdf.convert(
             str(data.files.cover_letter_docx), str(data.files.cover_letter_pdf)
         )

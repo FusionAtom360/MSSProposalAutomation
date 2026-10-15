@@ -30,7 +30,7 @@ class TemplateManager:
         self.templates[r"{{ANNUAL_CONSUMPTION}}"] = data.utility.annual_consumption
 
         self.templates[r"{{PANEL_MANUFACTURER}}"] = self.aliases.get(data.system.panel.manufacturer, data.system.panel.manufacturer)
-        self.templates[r"{{PANEL_MANUFACTURER_UPPERCASE}}"] = self.aliases.get(data.system.panel.manufacturer, data.system.panel.manufacturer).upper()
+        self.templates[r"{{PANEL_MANUFACTURER_UPPERCASE}}"] = self.aliases.get(data.system.panel.manufacturer, data.system.panel.manufacturer).upper() if data.system.panel.manufacturer else None
         self.templates[r"{{PANEL_MODEL}}"] = self.aliases.get(data.system.panel.model, data.system.panel.model)
         self.templates[r"{{PANEL_TYPE}}"] = (
             "monocrystalline" if data.system.panel.type == "mono"
@@ -46,20 +46,21 @@ class TemplateManager:
         self.templates[r"{{PANEL_COUNT}}"] = data.system.panel.count
 
         self.templates[r"{{INVERTER_MANUFACTURER}}"] = self.aliases.get(data.system.inverter.manufacturer, data.system.inverter.manufacturer)
-        self.templates[r"{{INVERTER_MANUFACTURER_UPPERCASE}}"] = self.aliases.get(data.system.inverter.manufacturer, data.system.inverter.manufacturer).upper()
+        self.templates[r"{{INVERTER_MANUFACTURER_UPPERCASE}}"] = self.aliases.get(data.system.inverter.manufacturer, data.system.inverter.manufacturer).upper() if data.system.inverter.manufacturer else None
         self.templates[r"{{INVERTER_MODEL}}"] = self.aliases.get(data.system.inverter.model, data.system.inverter.model)
         self.templates[r"{{INVERTER_WARRANTY}}"] = data.system.inverter.warranty
         self.templates[r"{{INVERTER_COUNT}}"] = data.system.inverter.count
         self.templates[r"{{INVERTER_EFFICIENCY}}"] = f"{round(data.system.inverter.efficiency*100)}" if data.system.inverter.efficiency else None
 
-        self.templates[r"{{BATTERY_MANUFACTURER}}"] = self.aliases.get(data.system.battery.manufacturer, data.system.battery.manufacturer)
-        self.templates[r"{{BATTERY_MANUFACTURER_UPPERCASE}}"] = self.aliases.get(data.system.battery.manufacturer, data.system.battery.manufacturer).upper() if data.system.battery.manufacturer else None
-        self.templates[r"{{BATTERY_MODEL}}"] = self.aliases.get(data.system.battery.model, data.system.battery.model)
-        self.templates[r"{{BATTERY_CAPACITY}}"] = data.system.battery.capacity
-        self.templates[r"{{BATTERY_WARRANTY}}"] = data.system.battery.warranty
-        self.templates[r"{{BATTERY_WARRANTY_CYCLES}}"] = data.system.battery.warranty * 400 if data.system.battery.warranty else None
-        self.templates[r"{{BATTERY_WARRANTY_CAPACITY}}"] = 60
-        self.templates[r"{{BATTERY_COUNT}}"] = data.system.battery.count
+        if data.system.type != 0:
+            self.templates[r"{{BATTERY_MANUFACTURER}}"] = self.aliases.get(data.system.battery.manufacturer, data.system.battery.manufacturer)
+            self.templates[r"{{BATTERY_MANUFACTURER_UPPERCASE}}"] = self.aliases.get(data.system.battery.manufacturer, data.system.battery.manufacturer).upper() if data.system.battery.manufacturer else None
+            self.templates[r"{{BATTERY_MODEL}}"] = self.aliases.get(data.system.battery.model, data.system.battery.model)
+            self.templates[r"{{BATTERY_CAPACITY}}"] = data.system.battery.capacity
+            self.templates[r"{{BATTERY_WARRANTY}}"] = data.system.battery.warranty
+            self.templates[r"{{BATTERY_WARRANTY_CYCLES}}"] = data.system.battery.warranty * 400 if data.system.battery.warranty else None
+            self.templates[r"{{BATTERY_WARRANTY_CAPACITY}}"] = 60
+            self.templates[r"{{BATTERY_COUNT}}"] = data.system.battery.count
 
         self.templates[r"{{SYSTEM_TYPE}}"] = "PV" if data.system.type == 0 else "ESS" if data.system.type == 1 else "PV & ESS"
         self.templates[r"{{PV_SIZE}}"] = data.system.pv_size
@@ -76,7 +77,8 @@ class TemplateManager:
         self.templates[r"{{TREE_TRIMMING_REQUIRED}}"] = self.resolve(r"{{TREE_TRIMMING_REQUIRED}}") if data.system.tree_trimming_required else ""
         self.templates[r"{{UTILITY_NEM}}"] = self.resolve(r"{{UTILITY_NEM_MID}}") if data.utility.name == "Modesto Irrigation District" else self.resolve(r"{{UTILITY_NEM_PGE}}")
         self.templates[r"{{UTILITY_APPLICATION_DESCRIPTION}}"] = self.resolve(r"{{UTILITY_APPLICATION_DESCRIPTION_MID}}") if data.utility.name == "Modesto Irrigation District" else self.resolve(r"{{UTILITY_APPLICATION_DESCRIPTION_PGE}}")
-        self.templates[r"{{BATTERY_PLURAL}}"] = "Batteries" if data.system.battery.count > 1 else "Battery"
+        if data.system.type != 0:
+            self.templates[r"{{BATTERY_PLURAL}}"] = "Batteries" if data.system.battery.count > 1 else "Battery"
         self.templates[r"{{UTILITY_LINK}}"] = self.resolve(r"{{UTILITY_LINK_MID}}") if data.utility.name == "Modesto Irrigation District" else self.resolve(r"{{UTILITY_LINK_PGE}}")
         self.templates[r"{{APPLICATION_FEE}}"] = self.resolve(r'{{APPLICATION_FEE_MID}}') if data.utility.name == "Modesto Irrigation District" else self.resolve(r'{{APPLICATION_FEE_PGE}}')
         self.templates[r"{{VARIANCE_APPROVAL}}"] = self.resolve(r'{{VARIANCE_APPROVAL_MID}}') if data.utility.name == "Modesto Irrigation District" else ""

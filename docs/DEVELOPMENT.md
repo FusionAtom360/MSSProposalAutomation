@@ -9,6 +9,7 @@ This guide documents the current implementation for the single-user Windows appl
 | `src/main.py` | Application entry point; loads environment settings, logging, updater, and UI. |
 | `src/ui.py` | CustomTkinter window, workflow buttons, task threads, status, and user-facing errors. |
 | `src/scraper.py` | SolarGraf project access, browser authentication, proposal download, and spec-sheet downloads. |
+| `src/http_client.py` | Shared authenticated HTTP session and request timeout policy. |
 | `src/token_receiver.py` | Temporary local HTTP endpoint used by the Chrome extension token handoff. |
 | `src/data.py` | Maps SolarGraf JSON and pricing workbook values into nested application state. |
 | `src/template.py` | Builds placeholder values and loads aliases/variables from `settings.xlsx`. |
@@ -35,6 +36,12 @@ main.py
 ```
 
 Long-running UI actions execute in daemon threads and marshal completion back to Tk with `after()`. The model is mutable: loading a project fills `DataManager`, spreadsheet import updates pricing and system fields, and template generation reads the current state.
+
+Outbound HTTP requests from `Scraper` use `AuthenticatedHttpClient`. Keep
+authentication headers and the default request timeout in that transport
+boundary rather than adding endpoint-specific `requests` calls. The client
+logs request method, URL, headers, timeout, query parameters, form data, and
+JSON content; credential-bearing headers are redacted before logging.
 
 When changing this behavior, preserve the distinction between:
 
@@ -123,7 +130,17 @@ Avoid adding more silent defaults. A default is safe only when it is a documente
 
 ## Testing and validation
 
-There is currently no automated test suite. Before submitting a change:
+Before submitting a change, run the regression suite:
+
+```powershell
+.\.venv\Scripts\python.exe -m unittest discover -s .\tests -v
+```
+
+The regression tests cover data normalization, settings-backed template
+values, and final PDF assembly using isolated temporary fixtures and mocked
+external Office/network operations.
+
+Also compile the application sources:
 
 ```powershell
 Get-ChildItem -Path . -Recurse -File -Filter *.py |
@@ -143,6 +160,12 @@ Then perform a manual smoke test:
 8. Confirm the final PDF, attachment, and copied files.
 
 Do not use a live customer delivery folder for development tests.
+
+Document generation performs hard prerequisite validation before writing or
+downloading output. The validation checks loaded project, customer, utility,
+system, and equipment data, plus the input files required for the requested
+stage. Keep these checks at the document-operation boundary when adding new
+generation paths; do not replace missing values with new defaults.
 
 High-value future tests should cover:
 
