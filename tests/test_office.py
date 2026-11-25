@@ -1,0 +1,216 @@
+import hashlib
+import json
+import sys
+from io import BytesIO
+from pathlib import Path
+from types import SimpleNamespace
+from unittest.mock import Mock
+
+import pytest
+from docx import Document
+from openpyxl import Workbook
+from pypdf import PdfReader, PdfWriter
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
+
+from data import DataManager
+from office import OfficeDocumentManager
+
+
+def test_finalize_validates_prerequisites_before_external_operations(monkeypatch):
+    data = DataManager()
+    convert = Mock()
+    monkeypatch.setattr("office.docx2pdf.convert", convert)
+
+    with pytest.raises(ValueError, match="project ID"):
+        OfficeDocumentManager().finalize_proposal(data, object(), object())
+
+    convert.assert_not_called()
+
+
+def test_finalize_combines_and_trims_cover_proposal_and_spec_sheets(
+    tmp_path, monkeypatch
+):
+    root = tmp_path
+    documents = root / "documents"
+    specsheets = documents / "specsheets"
+    specsheets.mkdir(parents=True)
+    _write_pdf(specsheets / "unrelated.pdf", 4, 699)
+
+    settings_path = root / "settings.xlsx"
+    workbook = Workbook()
+    workbook.active.title = "Aliases"
+    workbook.create_sheet("Variables")
+    spec_sheets = workbook.create_sheet("Spec Sheets")
+    spec_sheets.append(["model", "pages"])
+    spec_sheets.append(["Acme 400", 1])
+    spec_sheets.append(["Acme 8K", 2])
+    workbook.create_sheet("Spreadsheet")
+    workbook.save(settings_path)
+
+    cover_template = root / "cover_letter.docx"
+    Document().save(cover_template)
+    cover_letter_docx = documents / "cover_letter.docx"
+    Document().save(cover_letter_docx)
+
+    proposal_pdf = documents / "solargraf_proposal.pdf"
+    _write_pdf(proposal_pdf, 2, 602)
+    pricing_spreadsheet = documents / "pricing_spreadsheet.xlsx"
+    Workbook().save(pricing_spreadsheet)
+
+    data = DataManager()
+    data.project.id = 123
+    data.project.api_id = "api-id"
+    data.project.proposal_id = "proposal-id"
+    data.project.financial_id = "financial-id"
+    data.client.name = "Ada Lovelace"
+    data.client.first_name = "Ada"
+    data.client.last_name = "Lovelace"
+    data.client.address.street = "1 Analytical Engine Way"
+    data.client.address.city = "London"
+    data.client.address.region_code = "CA"
+    data.client.address.postal_code = "90210"
+    data.utility.name = "Example Utility"
+    data.system.type = 0
+    data.system.pv_size = 8.4
+    data.system.panel.manufacturer = "Acme Solar"
+    data.system.panel.model = "Acme 400"
+    data.system.panel.size = 400
+    data.system.panel.count = 21
+    data.system.panel.specsheet_url = "https://example.com/panel.pdf"
+    data.system.inverter.manufacturer = "Acme Inverters"
+    data.system.inverter.model = "Acme 8K"
+    data.system.inverter.count = 1
+    data.system.inverter.specsheet_url = "https://example.com/inverter.pdf"
+    data.files.settings = settings_path
+    data.files.documents_folder = documents
+    data.files.cover_letter_template = cover_template
+    data.files.cover_letter_docx = cover_letter_docx
+    data.files.cover_letter_pdf = documents / "cover_letter.pdf"
+    data.files.solargraf_proposal = proposal_pdf
+    data.files.pricing_spreadsheet = pricing_spreadsheet
+    data.files.specsheets_folder = specsheets
+    data.files.final_proposal = documents / "final.pdf"
+
+    class Variables:
+        def resolve(self, name):
+            return {
+                "{{PANEL_MODEL}}": "Acme 400",
+                "{{INVERTER_MODEL}}": "Acme 8K",
+            }.get(name, name)
+
+    class Scraper:
+        def __init__(self):
+            self.downloaded = []
+
+        def download(self, url, output_dir):
+            self.downloaded.append(url)
+            output = output_dir / Path(url).name
+            width = 603 if "panel" in url else 604
+            pages = 2 if "panel" in url else 3
+            _write_pdf(output, pages, width)
+            return output
+
+    scraper = Scraper()
+
+    def convert_cover_letter(source, target):
+        _write_pdf(Path(target), 1, 601)
+
+    convert = Mock(side_effect=convert_cover_letter)
+    monkeypatch.setattr("office.docx2pdf.convert", convert)
+
+    result = OfficeDocumentManager().finalize_proposal(data, Variables(), scraper)
+
+    assert result == data.files.final_proposal
+    pages = PdfReader(str(result)).pages
+    assert len(pages) == 6
+    assert [float(page.mediabox.width) for page in pages[:3]] == [601, 602, 602]
+    assert sorted(float(page.mediabox.width) for page in pages[3:]) == [603, 604, 604]
+    assert scraper.downloaded == [
+        "https://example.com/panel.pdf",
+        "https://example.com/inverter.pdf",
+    ]
+    assert len(PdfReader(str(data.files.specsheets_folder / "panel.pdf")).pages) == 1
+    assert len(PdfReader(str(data.files.specsheets_folder / "inverter.pdf")).pages) == 2
+    assert not (data.files.specsheets_folder / "unrelated.pdf").exists()
+    assert (specsheets / "unrelated.pdf").is_file()
+    assert Path(data.files.proposal_manifest).is_file()
+    assert result.parent.name == data.files.proposal_package_folder.name
+    manifest = json.loads(data.files.proposal_manifest.read_text(encoding="utf-8"))
+    assert manifest["run_id"] == result.parent.name
+    assert manifest["inputs"]["solargraf_proposal_pdf"]["snapshot_sha256"] == hashlib.sha256(
+        proposal_pdf.read_bytes()
+    ).hexdigest()
+    final_record = next(
+        artifact
+        for artifact in manifest["artifacts"]
+        if artifact["path"] == "final_proposal.pdf"
+    )
+    assert final_record["sha256"] == hashlib.sha256(result.read_bytes()).hexdigest()
+    convert.assert_called_once()
+    assert convert.call_args.args[0] != str(cover_letter_docx)
+    assert Path(convert.call_args.args[1]).name == "cover_letter.converted.pdf"
+
+    second_result = OfficeDocumentManager().finalize_proposal(
+        data, Variables(), scraper
+    )
+    assert second_result != result
+    assert second_result.parent.name != result.parent.name
+    assert len(list((documents / "proposal_packages").iterdir())) == 2
+    original_packages = {
+        result: result.read_bytes(),
+        second_result: second_result.read_bytes(),
+    }
+    packages_before_failure = sorted(
+        path.name for path in (documents / "proposal_packages").iterdir()
+    )
+
+    convert.reset_mock()
+    proposal_pdf.write_bytes(b"not a PDF")
+    with pytest.raises(ValueError, match="Invalid PDF"):
+        OfficeDocumentManager().finalize_proposal(data, Variables(), scraper)
+    convert.assert_not_called()
+    _write_pdf(proposal_pdf, 2, 602)
+
+    def fail_download(url, output_dir):
+        raise RuntimeError("specification download failed")
+
+    scraper.download = fail_download
+    with pytest.raises(RuntimeError, match="specification download failed"):
+        OfficeDocumentManager().finalize_proposal(data, Variables(), scraper)
+
+    assert all(
+        path.read_bytes() == content
+        for path, content in original_packages.items()
+    )
+    assert sorted(
+        path.name for path in (documents / "proposal_packages").iterdir()
+    ) == packages_before_failure
+    assert not list((documents / ".proposal-staging").iterdir())
+
+    images = root / "images"
+    images.mkdir()
+    (images / "site-photo.jpg").write_bytes(b"fixture image")
+    data.files.images_folder = images
+    settings = SimpleNamespace(
+        files=SimpleNamespace(bids_folder=root / "bids")
+    )
+    fileserver_package = OfficeDocumentManager().copy_to_fileserver(data, settings)
+    assert (fileserver_package / "proposal_package" / "manifest.json").is_file()
+    assert (fileserver_package / "images").is_dir()
+    assert (fileserver_package / "images" / "site-photo.jpg").read_bytes() == b"fixture image"
+    with pytest.raises(FileExistsError):
+        OfficeDocumentManager().copy_to_fileserver(data, settings)
+
+
+def _write_pdf(path, pages, width):
+    path.write_bytes(_pdf_bytes(pages, width))
+
+
+def _pdf_bytes(pages, width):
+    writer = PdfWriter()
+    for _ in range(pages):
+        writer.add_blank_page(width=width, height=792)
+    with BytesIO() as stream:
+        writer.write(stream)
+        return stream.getvalue()
