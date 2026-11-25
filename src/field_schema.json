@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "enforcement": "advisory",
+  "source_paths": {
+    "project.id": ["id"],
+    "project.api_id": ["public_id"],
+    "client.name": ["client_name"],
+    "client.phone": ["client_phone"],
+    "client.email": ["client_email"],
+    "client.address.street": ["Position", "street"],
+    "client.address.city": ["Position", "city"],
+    "client.address.region_code": ["Position", "region_code"],
+    "client.address.postal_code": ["Position", "postal_code"],
+    "system.pv_size": ["proposals", 0, "sizeInKw"],
+    "system.panel.manufacturer": ["Materials", "panel", 0, "Manufacturer", "name"],
+    "system.panel.model": ["Materials", "panel", 0, "name"],
+    "system.panel.type": ["Materials", "panel", 0, "type"],
+    "system.panel.size": ["Materials", "panel", 0, "size_in_watts"],
+    "system.panel.ptc": ["Materials", "panel", 0, "ptc"],
+    "system.panel.warranty": ["Materials", "panel", 0, "warranty"],
+    "system.panel.count": ["Materials", "panel", 0, "count"],
+    "system.panel.specsheet_url": ["Materials", "panel", 0, "spec_sheet"],
+    "utility.name": [
+      "Settings",
+      "Pricing",
+      "ProjectConnection",
+      "genability_lse_name"
+    ],
+    "utility.bills": ["Settings", "Pricing", "ProjectConnection", "Bills"],
+    "system.inverter.manufacturer": [
+      "Materials",
+      "inverter",
+      0,
+      "Manufacturer",
+      "name"
+    ],
+    "system.inverter.model": ["Materials", "inverter", 0, "name"],
+    "system.inverter.warranty": ["Materials", "inverter", 0, "warranty"],
+    "system.inverter.count": ["Materials", "inverter", 0, "count"],
+    "system.inverter.specsheet_url": ["Materials", "inverter", 0, "spec_sheet"],
+    "system.battery.manufacturer": [
+      "Materials",
+      "batteryBackup",
+      0,
+      "Manufacturer",
+      "name"
+    ],
+    "system.battery.model": ["Materials", "batteryBackup", 0, "name"],
+    "system.battery.capacity": ["Materials", "batteryBackup", 0, "capacity"],
+    "system.battery.warranty": ["Materials", "batteryBackup", 0, "warranty"],
+    "system.battery.count": ["Materials", "batteryBackup", 0, "count"],
+    "system.battery.specsheet_url": [
+      "Materials",
+      "batteryBackup",
+      0,
+      "spec_sheet"
+    ],
+    "system.battery.source": ["Materials", "batteryBackup", 0],
+    "system.roofing_only": ["is_roofing_only"],
+    "system.battery_only": ["is_battery_only"],
+    "project.financial_id": ["Settings", "Pricing", "FinancialOptions", 0, "id"],
+    "project.proposal_id": [
+      "Settings",
+      "Pricing",
+      "ProjectConnection",
+      "proposal_id"
+    ]
+  },
+  "defaults": {},
+  "validation": {
+    "blocking_schema": {
+      "type": "object"
+    },
+    "warning_schema": {
+      "type": "object"
+    },
+    "freshness": null
+  }
+}

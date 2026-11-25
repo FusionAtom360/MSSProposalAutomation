@@ -1,10 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import json
+import os
 import re
 import shutil
+import uuid
 import win32com.client as win32
 from pathlib import Path
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Mapping
 from openpyxl import load_workbook
 from docx import Document
@@ -13,6 +17,53 @@ from pypdf import PdfReader, PdfWriter
 from scraper import Scraper
 from data import DataManager
 from settings import SettingsManager
+
+
+def _validate_pdf(path: Path) -> int:
+    if not path.is_file() or path.stat().st_size == 0:
+        raise ValueError(f"PDF is missing or empty: {path}")
+
+    try:
+        reader = PdfReader(str(path), strict=True)
+        if reader.is_encrypted:
+            raise ValueError(f"Encrypted PDFs are not supported: {path}")
+        page_count = len(reader.pages)
+    except Exception as exc:
+        raise ValueError(f"Invalid PDF: {path}") from exc
+
+    if page_count == 0:
+        raise ValueError(f"PDF contains no pages: {path}")
+    return page_count
+
+
+def _fsync_file(path: Path) -> None:
+    with path.open("r+b") as file:
+        os.fsync(file.fileno())
+
+
+def _copy_file_fsynced(source: str | Path, destination: str | Path) -> str | Path:
+    with Path(source).open("rb") as source_file:
+        with Path(destination).open("wb") as destination_file:
+            shutil.copyfileobj(source_file, destination_file)
+            destination_file.flush()
+            os.fsync(destination_file.fileno())
+    return destination
+
+
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as file:
+        for chunk in iter(lambda: file.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _file_record(path: Path, relative_to: Path | None = None) -> dict[str, Any]:
+    return {
+        "path": str(path.relative_to(relative_to)) if relative_to else str(path),
+        "size_bytes": path.stat().st_size,
+        "sha256": _sha256(path),
+    }
 
 
 class OfficeDocumentManager:
@@ -64,62 +115,237 @@ class OfficeDocumentManager:
 
     def finalize_proposal(self, data: DataManager, variables, scraper: Scraper) -> Path:
         data.validate_for_document_generation("final_proposal")
-        docx2pdf.convert(
-            str(data.files.cover_letter_docx), str(data.files.cover_letter_pdf)
-        )
-
-        writer = PdfWriter()
-        writer.append(str(data.files.cover_letter_pdf))
-        writer.append(str(data.files.solargraf_proposal))
-        
-        specsheet_pages = {}
-
-        if data.files.settings.is_file():
-            workbook = load_workbook(data.files.settings, data_only=True, read_only=True)
-            sheet = workbook["Spec Sheets"]
-            for row in sheet.iter_rows(min_row=2, values_only=True):
-                model, value = row[0], row[1]
-                if model and value is not None:
-                    if model == variables.resolve(r'{{PANEL_MODEL}}'):
-                        specsheet_pages['panel'] = int(value)
-                    elif model == variables.resolve(r'{{INVERTER_MODEL}}'):
-                        specsheet_pages['inverter'] = int(value)
-                    elif model == variables.resolve(r'{{BATTERY_MODEL}}'):
-                        specsheet_pages['battery'] = int(value)
-            workbook.close()
-        
-        data.files.specsheets_folder.mkdir(parents=True, exist_ok=True)
-
-        def download_and_trim(url: str, specsheet_name: str) -> None:
-            specsheet_path = scraper.download(
-                url, output_dir=data.files.specsheets_folder
+        documents_dir = Path(data.files.documents_folder)
+        if documents_dir == Path("."):
+            previous_package = Path(data.files.proposal_package_folder)
+            documents_dir = (
+                previous_package.parent.parent
+                if previous_package != Path(".")
+                else Path(data.files.final_proposal).parent
             )
-            max_pages = specsheet_pages.get(specsheet_name)
-            if max_pages is None:
-                return
+        documents_dir.mkdir(parents=True, exist_ok=True)
+        run_id = (
+            f"{datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')}-"
+            f"{uuid.uuid4().hex}"
+        )
+        staging_root = documents_dir / ".proposal-staging"
+        package_root = documents_dir / "proposal_packages"
+        staging_root.mkdir(parents=True, exist_ok=True)
+        package_root.mkdir(parents=True, exist_ok=True)
+        staging_dir = staging_root / run_id
+        package_dir = package_root / run_id
+        staging_dir.mkdir()
 
-            reader = PdfReader(str(specsheet_path))
+        source_inputs = {
+            "cover_letter_docx": Path(data.files.cover_letter_docx),
+            "solargraf_proposal_pdf": Path(data.files.solargraf_proposal),
+            "pricing_spreadsheet": Path(data.files.pricing_spreadsheet),
+            "settings_workbook": Path(data.files.settings),
+        }
+
+        try:
+            input_dir = staging_dir / "inputs"
+            input_dir.mkdir()
+            snapshots = {}
+            for name, source in source_inputs.items():
+                snapshot = input_dir / f"{name}{source.suffix}"
+                shutil.copyfile(source, snapshot)
+                _fsync_file(snapshot)
+                snapshots[name] = snapshot
+
+            source_proposal_pages = _validate_pdf(
+                snapshots["solargraf_proposal_pdf"]
+            )
+            cover_letter_pdf = staging_dir / "cover_letter.pdf"
+            converted_pdf = staging_dir / "cover_letter.converted.pdf"
+            docx2pdf.convert(
+                str(snapshots["cover_letter_docx"]), str(converted_pdf)
+            )
+            cover_letter_pages = _validate_pdf(converted_pdf)
+            _fsync_file(converted_pdf)
+            os.replace(converted_pdf, cover_letter_pdf)
+
+            specsheet_pages = {}
+            workbook = load_workbook(
+                snapshots["settings_workbook"], data_only=True, read_only=True
+            )
+            try:
+                sheet = workbook["Spec Sheets"]
+                for row in sheet.iter_rows(min_row=2, values_only=True):
+                    model, value = row[0], row[1]
+                    if model and value is not None:
+                        if model == variables.resolve(r"{{PANEL_MODEL}}"):
+                            specsheet_pages["panel"] = self._parse_page_limit(
+                                value, "panel"
+                            )
+                        elif model == variables.resolve(r"{{INVERTER_MODEL}}"):
+                            specsheet_pages["inverter"] = self._parse_page_limit(
+                                value, "inverter"
+                            )
+                        elif model == variables.resolve(r"{{BATTERY_MODEL}}"):
+                            specsheet_pages["battery"] = self._parse_page_limit(
+                                value, "battery"
+                            )
+            finally:
+                workbook.close()
+
+            specsheets_dir = staging_dir / "specsheets"
+            downloads_dir = staging_dir / "downloads"
+            specsheets_dir.mkdir()
+            downloads_dir.mkdir()
+            requested_specsheets = []
+            if data.system.type in (0, 2):
+                requested_specsheets.extend(
+                    (
+                        ("panel", data.system.panel.specsheet_url),
+                        ("inverter", data.system.inverter.specsheet_url),
+                    )
+                )
+            if data.system.type in (1, 2):
+                requested_specsheets.append(
+                    ("battery", data.system.battery.specsheet_url)
+                )
+
+            specsheet_files = []
+            specsheet_page_counts = {}
+            for name, url in requested_specsheets:
+                downloaded_path = Path(scraper.download(url, output_dir=downloads_dir))
+                _validate_pdf(downloaded_path)
+                target = specsheets_dir / f"{name}.pdf"
+                max_pages = specsheet_pages.get(name)
+                if max_pages is None:
+                    shutil.copyfile(downloaded_path, target.with_name(f"{name}.tmp.pdf"))
+                else:
+                    if max_pages <= 0:
+                        raise ValueError(
+                            f"Configured page count for {name} must be positive."
+                        )
+                    reader = PdfReader(str(downloaded_path), strict=True)
+                    spec_writer = PdfWriter()
+                    for page in reader.pages[:max_pages]:
+                        spec_writer.add_page(page)
+                    spec_writer.write(str(target.with_name(f"{name}.tmp.pdf")))
+
+                temporary_spec = target.with_name(f"{name}.tmp.pdf")
+                specsheet_page_counts[name] = _validate_pdf(temporary_spec)
+                _fsync_file(temporary_spec)
+                os.replace(temporary_spec, target)
+                specsheet_files.append(target)
+
+            shutil.rmtree(downloads_dir)
+
+            final_pdf = staging_dir / "final_proposal.pdf"
+            temporary_final = staging_dir / "final_proposal.tmp.pdf"
             writer = PdfWriter()
-            for page in reader.pages[:max_pages]:
-                writer.add_page(page)
+            writer.append(str(cover_letter_pdf))
+            writer.append(str(snapshots["solargraf_proposal_pdf"]))
+            for specsheet_file in specsheet_files:
+                writer.append(str(specsheet_file))
+            writer.write(str(temporary_final))
+            final_page_count = _validate_pdf(temporary_final)
+            _fsync_file(temporary_final)
+            os.replace(temporary_final, final_pdf)
 
-            with open(specsheet_path, "wb") as output_file:
-                writer.write(output_file)
+            supporting_dir = staging_dir / "supporting"
+            supporting_dir.mkdir()
+            support_files = {}
+            for name in (
+                "cover_letter_docx",
+                "solargraf_proposal_pdf",
+                "pricing_spreadsheet",
+            ):
+                source = snapshots[name]
+                target = supporting_dir / source.name
+                shutil.copyfile(source, target)
+                _fsync_file(target)
+                support_files[name] = target
 
-        if data.system.type == 0:
-            download_and_trim(data.system.panel.specsheet_url, "panel")
-            download_and_trim(data.system.inverter.specsheet_url, "inverter")
-        if data.system.type == 1:
-            download_and_trim(data.system.battery.specsheet_url, "battery")
-        if data.system.type == 2:
-            download_and_trim(data.system.panel.specsheet_url, "panel")
-            download_and_trim(data.system.inverter.specsheet_url, "inverter")
-            download_and_trim(data.system.battery.specsheet_url, "battery")
+            input_records = {
+                name: {
+                    "source_path": str(source.resolve()),
+                    "snapshot_size_bytes": snapshots[name].stat().st_size,
+                    "snapshot_sha256": _sha256(snapshots[name]),
+                }
+                for name, source in source_inputs.items()
+            }
+            shutil.rmtree(input_dir)
+            artifacts = [
+                {
+                    **_file_record(cover_letter_pdf, staging_dir),
+                    "role": "generated",
+                    "pages": cover_letter_pages,
+                },
+                {
+                    **_file_record(final_pdf, staging_dir),
+                    "role": "generated",
+                    "pages": final_page_count,
+                },
+                *[
+                    {
+                        **_file_record(path, staging_dir),
+                        "role": "specification_sheet",
+                        "pages": specsheet_page_counts[path.stem],
+                    }
+                    for path in specsheet_files
+                ],
+                *[
+                    {
+                        **_file_record(path, staging_dir),
+                        "role": "supporting_input",
+                    }
+                    for path in support_files.values()
+                ],
+            ]
+            manifest = {
+                "manifest_version": 1,
+                "run_id": run_id,
+                "created_at": datetime.now(timezone.utc).isoformat(),
+                "project_id": data.project.id,
+                "manifest_file": "manifest.json",
+                "inputs": input_records,
+                "source_pdf_pages": source_proposal_pages,
+                "artifacts": artifacts,
+            }
 
-        for specsheet_file in data.files.specsheets_folder.glob("*.pdf"):
-            writer.append(str(specsheet_file))
-        writer.write(str(data.files.final_proposal))
+            manifest_path = staging_dir / "manifest.json"
+            temporary_manifest = staging_dir / "manifest.tmp.json"
+            with temporary_manifest.open("w", encoding="utf-8", newline="\n") as file:
+                json.dump(manifest, file, indent=2, sort_keys=True)
+                file.write("\n")
+                file.flush()
+                os.fsync(file.fileno())
+            os.replace(temporary_manifest, manifest_path)
+
+            os.replace(staging_dir, package_dir)
+        except Exception:
+            if staging_dir.exists():
+                shutil.rmtree(staging_dir)
+            raise
+
+        data.files.proposal_package_folder = package_dir
+        data.files.proposal_manifest = package_dir / "manifest.json"
+        data.files.specsheets_folder = package_dir / "specsheets"
+        data.files.cover_letter_pdf = package_dir / "cover_letter.pdf"
+        data.files.final_proposal = package_dir / "final_proposal.pdf"
         return data.files.final_proposal
+
+    @staticmethod
+    def _parse_page_limit(value: Any, specsheet_name: str) -> int:
+        if isinstance(value, bool) or not isinstance(value, (int, float, str)):
+            raise ValueError(
+                f"Configured page count for {specsheet_name} must be an integer."
+            )
+        try:
+            page_limit = int(value)
+        except (ValueError, OverflowError) as exc:
+            raise ValueError(
+                f"Configured page count for {specsheet_name} must be an integer."
+            ) from exc
+        if isinstance(value, float) and not value.is_integer():
+            raise ValueError(
+                f"Configured page count for {specsheet_name} must be an integer."
+            )
+        return page_limit
 
     def generate_email(self, data: DataManager, variables) -> None:
         data.update_from_pricing_spreadsheet()
@@ -226,28 +452,32 @@ class OfficeDocumentManager:
             / f"{data.client.last_name}, {data.client.first_name}"
         )
         destination_folder.mkdir(parents=True, exist_ok=True)
+        package_dir = Path(data.files.proposal_package_folder)
+        if not package_dir.is_dir() or not (package_dir / "manifest.json").is_file():
+            raise ValueError("A published proposal package is required before file-server copy.")
 
-        shutil.copy(
-            data.files.final_proposal,
-            destination_folder
-            / f"{datetime.now().strftime('%y_%m%d')} {data.client.last_name}, {data.client.first_name} {"PV" if data.system.type == 0 else "ESS" if data.system.type == 1 else "PV ESS"} Proposal.pdf",
-        )
-        shutil.copy(
-            data.files.pricing_spreadsheet,
-            destination_folder
-            / f"{datetime.now().strftime('%y_%m%d')} {data.client.last_name}, {data.client.first_name} {"PV" if data.system.type == 0 else "ESS" if data.system.type == 1 else "PV ESS"} Bid.xlsx",
-        )
-        shutil.copy(
-            data.files.cover_letter_docx,
-            destination_folder
-            / f"PV ESS Proposal - {data.client.last_name}, {data.client.first_name}.docx",
-        )
-        shutil.copy(
-            data.files.solargraf_proposal,
-            destination_folder / f"Proposal for - {data.client.name}.pdf",
-        )
-        shutil.copytree(
-            data.files.images_folder, destination_folder / "images", dirs_exist_ok=True
-        )
+        run_id = package_dir.name
+        published_dir = destination_folder / f"proposal_{run_id}"
+        if published_dir.exists():
+            raise FileExistsError(f"File-server package already exists: {published_dir}")
 
-        return destination_folder
+        staging_dir = destination_folder / f".{published_dir.name}.{uuid.uuid4().hex}.tmp"
+        try:
+            staging_dir.mkdir()
+            shutil.copytree(
+                package_dir,
+                staging_dir / "proposal_package",
+                copy_function=_copy_file_fsynced,
+            )
+            shutil.copytree(
+                data.files.images_folder,
+                staging_dir / "images",
+                copy_function=_copy_file_fsynced,
+            )
+            os.replace(staging_dir, published_dir)
+        except Exception:
+            if staging_dir.exists():
+                shutil.rmtree(staging_dir)
+            raise
+
+        return published_dir

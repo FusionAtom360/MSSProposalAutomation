@@ -6,17 +6,19 @@ import threading
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
-
 LOGGER_NAME = "mss_proposal_automation"
 
 
-def configure_logging(level: int = logging.INFO) -> logging.Logger:
+def configure_logging(
+    level: int = logging.INFO,
+    log_dir: Path | None = None,
+) -> logging.Logger:
     logger = logging.getLogger(LOGGER_NAME)
 
     if logger.handlers:
         return logger
 
-    log_dir = Path(__file__).resolve().parent / "logs"
+    log_dir = log_dir or Path(__file__).resolve().parent / "logs"
     print(log_dir)
     log_dir.mkdir(parents=True, exist_ok=True)
 
