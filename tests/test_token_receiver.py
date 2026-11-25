@@ -26,9 +26,7 @@ def token_server():
 
 
 def _post(server, body, content_type="application/json"):
-    connection = HTTPConnection(
-        "127.0.0.1", server.server_port, timeout=5
-    )
+    connection = HTTPConnection("127.0.0.1", server.server_port, timeout=5)
     connection.request(
         "POST",
         "/token",
@@ -44,9 +42,7 @@ def _post(server, body, content_type="application/json"):
 def test_receiver_preserves_raw_token_and_accepts_only_one(token_server):
     token = "token-value-with-both-edge-characters"
 
-    status, payload = _post(
-        token_server, json.dumps({"token": token}).encode("utf-8")
-    )
+    status, payload = _post(token_server, json.dumps({"token": token}).encode("utf-8"))
 
     assert status == 200
     assert payload == {"status": "accepted"}
@@ -119,11 +115,9 @@ def test_receiver_handles_missing_or_invalid_content_length(
     ]
     if content_length is not None:
         headers.append(f"Content-Length: {content_length}")
-    request = (
-        "POST /token HTTP/1.1\r\n"
-        + "\r\n".join(headers)
-        + "\r\n\r\n"
-    ).encode("ascii")
+    request = ("POST /token HTTP/1.1\r\n" + "\r\n".join(headers) + "\r\n\r\n").encode(
+        "ascii"
+    )
     with socket.create_connection(
         ("127.0.0.1", token_server.server_port), timeout=5
     ) as connection:
@@ -137,7 +131,5 @@ def test_receiver_handles_missing_or_invalid_content_length(
         response = b"".join(chunks).decode("utf-8")
 
     assert response.splitlines()[0].split()[1] == str(expected_status)
-    assert json.loads(response.split("\r\n\r\n", 1)[1]) == {
-        "error": expected_error
-    }
+    assert json.loads(response.split("\r\n\r\n", 1)[1]) == {"error": expected_error}
     assert token_server.session.token is None

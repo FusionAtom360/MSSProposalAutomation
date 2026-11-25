@@ -81,7 +81,7 @@ class OfficeDocumentManager:
         self.base_dir = Path(base_dir) if base_dir else Path(__file__).resolve().parent
         self.templates_dir = self.base_dir / "templates"
         self.documents_dir = self.base_dir / "documents"
-        self.alias_mapping = {}
+        self.alias_mapping: dict[str, str] = {}
 
     def complete_pricing_spreadsheet(self, data: DataManager, variables) -> Path:
         """Validate inputs, substitute placeholders, and save the pricing workbook."""
@@ -107,7 +107,7 @@ class OfficeDocumentManager:
                                     cell.value = cell.value.replace(
                                         placeholder, str(replacement)
                                     )
-                                    
+
         workbook.save(data.files.pricing_spreadsheet)
         workbook.close()
         return data.files.pricing_spreadsheet
@@ -166,14 +166,10 @@ class OfficeDocumentManager:
                 _fsync_file(snapshot)
                 snapshots[name] = snapshot
 
-            source_proposal_pages = _validate_pdf(
-                snapshots["solargraf_proposal_pdf"]
-            )
+            source_proposal_pages = _validate_pdf(snapshots["solargraf_proposal_pdf"])
             cover_letter_pdf = staging_dir / "cover_letter.pdf"
             converted_pdf = staging_dir / "cover_letter.converted.pdf"
-            docx2pdf.convert(
-                str(snapshots["cover_letter_docx"]), str(converted_pdf)
-            )
+            docx2pdf.convert(str(snapshots["cover_letter_docx"]), str(converted_pdf))
             cover_letter_pages = _validate_pdf(converted_pdf)
             _fsync_file(converted_pdf)
             os.replace(converted_pdf, cover_letter_pdf)
@@ -206,7 +202,7 @@ class OfficeDocumentManager:
             downloads_dir = staging_dir / "downloads"
             specsheets_dir.mkdir()
             downloads_dir.mkdir()
-            requested_specsheets = []
+            requested_specsheets: list[tuple[str, str]] = []
             if data.system.type in (0, 2):
                 requested_specsheets.extend(
                     (
@@ -227,7 +223,9 @@ class OfficeDocumentManager:
                 target = specsheets_dir / f"{name}.pdf"
                 max_pages = specsheet_pages.get(name)
                 if max_pages is None:
-                    shutil.copyfile(downloaded_path, target.with_name(f"{name}.tmp.pdf"))
+                    shutil.copyfile(
+                        downloaded_path, target.with_name(f"{name}.tmp.pdf")
+                    )
                 else:
                     if max_pages <= 0:
                         raise ValueError(
@@ -423,7 +421,7 @@ class OfficeDocumentManager:
             pos += len(run.text)
 
         # Flatten full_text into segments: unchanged text and matched placeholders.
-        segments = []  # (seg_start, seg_end, is_match, replacement_or_None)
+        segments: list[tuple[int, int, bool, str | None]] = []
         cursor = 0
         for m in matches:
             if m.start() > cursor:
@@ -438,17 +436,18 @@ class OfficeDocumentManager:
             if rs == re_:
                 continue  # empty run
 
-            pieces = []
+            pieces: list[str] = []
             for seg_start, seg_end, is_match, replacement in segments:
                 if seg_end <= rs or seg_start >= re_:
                     continue  # segment doesn't touch this run
 
                 if not is_match:
-                    pieces.append(full_text[max(seg_start, rs):min(seg_end, re_)])
+                    pieces.append(full_text[max(seg_start, rs) : min(seg_end, re_)])
                 else:
                     # Emit the replacement only in the run that contains the
                     # *start* of the match, so a placeholder spanning several
                     # runs doesn't get duplicated.
+                    assert replacement is not None
                     if rs <= seg_start < re_:
                         pieces.append(replacement)
 
@@ -484,14 +483,20 @@ class OfficeDocumentManager:
         destination_folder.mkdir(parents=True, exist_ok=True)
         package_dir = Path(data.files.proposal_package_folder)
         if not package_dir.is_dir() or not (package_dir / "manifest.json").is_file():
-            raise ValueError("A published proposal package is required before file-server copy.")
+            raise ValueError(
+                "A published proposal package is required before file-server copy."
+            )
 
         run_id = package_dir.name
         published_dir = destination_folder / f"proposal_{run_id}"
         if published_dir.exists():
-            raise FileExistsError(f"File-server package already exists: {published_dir}")
+            raise FileExistsError(
+                f"File-server package already exists: {published_dir}"
+            )
 
-        staging_dir = destination_folder / f".{published_dir.name}.{uuid.uuid4().hex}.tmp"
+        staging_dir = (
+            destination_folder / f".{published_dir.name}.{uuid.uuid4().hex}.tmp"
+        )
         try:
             staging_dir.mkdir()
             shutil.copytree(

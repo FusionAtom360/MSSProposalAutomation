@@ -48,8 +48,7 @@ def test_signed_metadata_and_workflow_identity_are_required(tmp_path, monkeypatc
     assert REPOSITORY in command
     assert "refs/heads/main" in command
     assert (
-        f"https://github.com/{REPOSITORY}/.github/workflows/release.yml"
-        "@refs/heads/main"
+        f"https://github.com/{REPOSITORY}/.github/workflows/release.yml@refs/heads/main"
     ) in command
 
 
@@ -121,9 +120,7 @@ def test_archive_path_traversal_is_rejected(tmp_path):
         extract_release_archive(archive, tmp_path / "output")
 
 
-def test_failed_directory_swap_restores_previous_application(
-    tmp_path, monkeypatch
-):
+def test_failed_directory_swap_restores_previous_application(tmp_path, monkeypatch):
     current = tmp_path / "src"
     staged = tmp_path / "staged"
     backup = tmp_path / "backup"
@@ -216,16 +213,16 @@ def test_existing_templates_are_preserved_without_merging_release_defaults(tmp_p
     (current_templates / "custom-template.docx").write_text(
         "user-added", encoding="utf-8"
     )
-    (staged_templates / "settings.xlsx").write_text(
-        "release-default", encoding="utf-8"
-    )
+    (staged_templates / "settings.xlsx").write_text("release-default", encoding="utf-8")
     (staged_templates / "new-default.xlsx").write_text(
         "release-added", encoding="utf-8"
     )
 
     preserve_local_files(current, staged)
 
-    assert (staged_templates / "settings.xlsx").read_text(encoding="utf-8") == "user-edited"
+    assert (staged_templates / "settings.xlsx").read_text(
+        encoding="utf-8"
+    ) == "user-edited"
     assert (staged_templates / "custom-template.docx").read_text(
         encoding="utf-8"
     ) == "user-added"

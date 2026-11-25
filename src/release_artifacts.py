@@ -74,9 +74,7 @@ def release_assets(release: dict[str, Any]) -> dict[str, dict[str, Any]]:
 def download_asset(asset: dict[str, Any], destination: Path) -> None:
     """Download a repository release asset while enforcing its size limit."""
     url = asset.get("browser_download_url")
-    expected_prefix = (
-        f"https://github.com/{REPOSITORY}/releases/download/"
-    )
+    expected_prefix = f"https://github.com/{REPOSITORY}/releases/download/"
     if not isinstance(url, str) or not url.startswith(expected_prefix):
         raise ValueError("Release asset URL is not from the expected repository")
 
@@ -112,7 +110,13 @@ def _read_manifest(archive: Path) -> dict[str, Any]:
             if info.file_size > MAX_MANIFEST_SIZE:
                 raise ValueError("Release manifest is too large")
             manifest = json.loads(package.read(info).decode("utf-8"))
-    except (OSError, zipfile.BadZipFile, KeyError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    except (
+        OSError,
+        zipfile.BadZipFile,
+        KeyError,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as exc:
         raise ValueError("Release archive or manifest is invalid") from exc
 
     if not isinstance(manifest, dict):
@@ -145,6 +149,8 @@ def verify_release_artifact(
 
     manifest = _read_manifest(archive)
     version_text = manifest.get("version")
+    if not isinstance(version_text, str):
+        raise ValueError("Release manifest has an invalid version")
     try:
         manifest_version = Version(version_text)
     except (InvalidVersion, TypeError) as exc:
@@ -156,7 +162,6 @@ def verify_release_artifact(
     tag = manifest.get("tag")
     if (
         manifest.get("repository") != REPOSITORY
-        or not isinstance(version_text, str)
         or manifest_version != expected_version
         or tag != expected_tag
         or not isinstance(commit, str)
@@ -258,9 +263,7 @@ def preserve_local_files(current_src: Path, staged_src: Path) -> None:
 
 def create_backup_path(parent: Path) -> Path:
     """Reserve and return a unique backup path under parent."""
-    backup = Path(
-        tempfile.mkdtemp(prefix=".mss-src-backup-", dir=parent)
-    )
+    backup = Path(tempfile.mkdtemp(prefix=".mss-src-backup-", dir=parent))
     backup.rmdir()
     return backup
 

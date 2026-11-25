@@ -20,9 +20,7 @@ def test_default_application_paths_ignore_process_working_directory(
     assert files.bids_folder == APPLICATION_ROOT / "bids"
 
 
-def test_relative_bids_folder_is_resolved_from_application_root(
-    tmp_path, monkeypatch
-):
+def test_relative_bids_folder_is_resolved_from_application_root(tmp_path, monkeypatch):
     monkeypatch.chdir(tmp_path)
     monkeypatch.setenv("BIDS_FOLDER", "shared-bids")
 

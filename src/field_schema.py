@@ -217,7 +217,9 @@ def load_field_schema(path: Path) -> FieldSchema:
     if freshness is not None:
         if not isinstance(freshness, dict):
             raise ValueError("Field schema freshness must be a JSON object")
-        freshness_path = _parse_path(freshness.get("source_path"), "freshness.source_path")
+        freshness_path = _parse_path(
+            freshness.get("source_path"), "freshness.source_path"
+        )
         max_age = freshness.get("max_age_seconds")
         severity = freshness.get("severity", "warning")
         if (
@@ -305,9 +307,7 @@ def validate_instance(
     )
 
     if schema.freshness is not None:
-        timestamp = _lookup_source_path(
-            source_payload, schema.freshness["source_path"]
-        )
+        timestamp = _lookup_source_path(source_payload, schema.freshness["source_path"])
         issue = _freshness_issue(timestamp, schema.freshness, now)
         if issue is not None:
             if issue.severity == "error":
@@ -355,16 +355,13 @@ def _freshness_issue(
             field=field_path,
             code="source_stale",
             message=(
-                f"Source timestamp is older than "
-                f"{freshness['max_age_seconds']} seconds"
+                f"Source timestamp is older than {freshness['max_age_seconds']} seconds"
             ),
         )
     return None
 
 
-def _lookup_source_path(
-    source: dict[str, Any], path: tuple[str | int, ...]
-) -> Any:
+def _lookup_source_path(source: dict[str, Any], path: tuple[str | int, ...]) -> Any:
     """Read a nested source value, returning None when a path is absent."""
     value: Any = source
     try:

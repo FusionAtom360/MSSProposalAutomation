@@ -1,21 +1,21 @@
 """Resolve proposal placeholders from project data and workbook settings."""
 
-import datetime
-
 from data import DataManager
 from field_schema import FieldProvenance, ValidationIssue, ValidationReport
 from openpyxl import load_workbook
 from datetime import datetime
+from typing import Any
+
 
 class TemplateManager:
     """Build and resolve document placeholders with provenance information."""
 
     def __init__(self, data: DataManager):
         """Initialize placeholder state and populate it from project data."""
-        self.templates = {}
-        self.aliases = {}
-        self.provenance = {}
-        self.unresolved_placeholders = set()
+        self.templates: dict[str, Any] = {}
+        self.aliases: dict[str, str] = {}
+        self.provenance: dict[str, FieldProvenance] = {}
+        self.unresolved_placeholders: set[str] = set()
         self.validation_report = ValidationReport()
         self.update(data)
 
@@ -50,69 +50,159 @@ class TemplateManager:
         self.templates[r"{{CLIENT_ADDRESS_CITY}}"] = data.client.address.city
         self.templates[r"{{CLIENT_ADDRESS_ZIP}}"] = data.client.address.postal_code
 
-        self.templates[r"{{UTILITY_NAME}}"] = self.aliases.get(data.utility.name, data.utility.name)
+        self.templates[r"{{UTILITY_NAME}}"] = self.aliases.get(
+            data.utility.name, data.utility.name
+        )
         self.templates[r"{{ANNUAL_CONSUMPTION}}"] = data.utility.annual_consumption
 
-        self.templates[r"{{PANEL_MANUFACTURER}}"] = self.aliases.get(data.system.panel.manufacturer, data.system.panel.manufacturer)
-        self.templates[r"{{PANEL_MANUFACTURER_UPPERCASE}}"] = self.aliases.get(data.system.panel.manufacturer, data.system.panel.manufacturer).upper() if data.system.panel.manufacturer else None
-        self.templates[r"{{PANEL_MODEL}}"] = self.aliases.get(data.system.panel.model, data.system.panel.model)
+        self.templates[r"{{PANEL_MANUFACTURER}}"] = self.aliases.get(
+            data.system.panel.manufacturer, data.system.panel.manufacturer
+        )
+        self.templates[r"{{PANEL_MANUFACTURER_UPPERCASE}}"] = (
+            self.aliases.get(
+                data.system.panel.manufacturer, data.system.panel.manufacturer
+            ).upper()
+            if data.system.panel.manufacturer
+            else None
+        )
+        self.templates[r"{{PANEL_MODEL}}"] = self.aliases.get(
+            data.system.panel.model, data.system.panel.model
+        )
         self.templates[r"{{PANEL_TYPE}}"] = (
-            "monocrystalline" if data.system.panel.type == "mono"
-            else "polycrystalline" if data.system.panel.type == "poly"
+            "monocrystalline"
+            if data.system.panel.type == "mono"
+            else "polycrystalline"
+            if data.system.panel.type == "poly"
             else "bifacial"
         )
         self.templates[r"{{PANEL_SIZE}}"] = data.system.panel.size
         self.templates[r"{{PANEL_PTC}}"] = data.system.panel.ptc
-        self.templates[r"{{PANEL_PTC_RATIO}}"] = round(
-            data.system.panel.ptc / data.system.panel.size * 100
-        ) if data.system.panel.size and data.system.panel.ptc else None
+        self.templates[r"{{PANEL_PTC_RATIO}}"] = (
+            round(data.system.panel.ptc / data.system.panel.size * 100)
+            if data.system.panel.size and data.system.panel.ptc
+            else None
+        )
         self.templates[r"{{PANEL_WARRANTY}}"] = data.system.panel.warranty
         self.templates[r"{{PANEL_COUNT}}"] = data.system.panel.count
 
-        self.templates[r"{{INVERTER_MANUFACTURER}}"] = self.aliases.get(data.system.inverter.manufacturer, data.system.inverter.manufacturer)
-        self.templates[r"{{INVERTER_MANUFACTURER_UPPERCASE}}"] = self.aliases.get(data.system.inverter.manufacturer, data.system.inverter.manufacturer).upper() if data.system.inverter.manufacturer else None
-        self.templates[r"{{INVERTER_MODEL}}"] = self.aliases.get(data.system.inverter.model, data.system.inverter.model)
+        self.templates[r"{{INVERTER_MANUFACTURER}}"] = self.aliases.get(
+            data.system.inverter.manufacturer, data.system.inverter.manufacturer
+        )
+        self.templates[r"{{INVERTER_MANUFACTURER_UPPERCASE}}"] = (
+            self.aliases.get(
+                data.system.inverter.manufacturer, data.system.inverter.manufacturer
+            ).upper()
+            if data.system.inverter.manufacturer
+            else None
+        )
+        self.templates[r"{{INVERTER_MODEL}}"] = self.aliases.get(
+            data.system.inverter.model, data.system.inverter.model
+        )
         self.templates[r"{{INVERTER_WARRANTY}}"] = data.system.inverter.warranty
         self.templates[r"{{INVERTER_COUNT}}"] = data.system.inverter.count
-        self.templates[r"{{INVERTER_EFFICIENCY}}"] = f"{round(data.system.inverter.efficiency*100)}" if data.system.inverter.efficiency else None
+        self.templates[r"{{INVERTER_EFFICIENCY}}"] = (
+            f"{round(data.system.inverter.efficiency * 100)}"
+            if data.system.inverter.efficiency
+            else None
+        )
 
         if data.system.type != 0:
-            self.templates[r"{{BATTERY_MANUFACTURER}}"] = self.aliases.get(data.system.battery.manufacturer, data.system.battery.manufacturer)
-            self.templates[r"{{BATTERY_MANUFACTURER_UPPERCASE}}"] = self.aliases.get(data.system.battery.manufacturer, data.system.battery.manufacturer).upper() if data.system.battery.manufacturer else None
-            self.templates[r"{{BATTERY_MODEL}}"] = self.aliases.get(data.system.battery.model, data.system.battery.model)
+            self.templates[r"{{BATTERY_MANUFACTURER}}"] = self.aliases.get(
+                data.system.battery.manufacturer, data.system.battery.manufacturer
+            )
+            self.templates[r"{{BATTERY_MANUFACTURER_UPPERCASE}}"] = (
+                self.aliases.get(
+                    data.system.battery.manufacturer, data.system.battery.manufacturer
+                ).upper()
+                if data.system.battery.manufacturer
+                else None
+            )
+            self.templates[r"{{BATTERY_MODEL}}"] = self.aliases.get(
+                data.system.battery.model, data.system.battery.model
+            )
             self.templates[r"{{BATTERY_CAPACITY}}"] = data.system.battery.capacity
             self.templates[r"{{BATTERY_WARRANTY}}"] = data.system.battery.warranty
-            self.templates[r"{{BATTERY_WARRANTY_CYCLES}}"] = data.system.battery.warranty * 400 if data.system.battery.warranty else None
+            self.templates[r"{{BATTERY_WARRANTY_CYCLES}}"] = (
+                data.system.battery.warranty * 400
+                if data.system.battery.warranty
+                else None
+            )
             self.templates[r"{{BATTERY_WARRANTY_CAPACITY}}"] = 60
             self.templates[r"{{BATTERY_COUNT}}"] = data.system.battery.count
 
-        self.templates[r"{{SYSTEM_TYPE}}"] = "PV" if data.system.type == 0 else "ESS" if data.system.type == 1 else "PV & ESS"
+        self.templates[r"{{SYSTEM_TYPE}}"] = (
+            "PV"
+            if data.system.type == 0
+            else "ESS"
+            if data.system.type == 1
+            else "PV & ESS"
+        )
         self.templates[r"{{PV_SIZE}}"] = data.system.pv_size
         self.templates[r"{{ESS_SIZE}}"] = data.system.ess_size
-        self.templates[r"{{ESS_TYPE}}"] = self.resolve(r"{{ESS_TYPE_ON_GRID}}") if data.system.ess_type == 0 else self.resolve(r"{{ESS_TYPE_OFF_GRID}}")
-        self.templates[r"{{OFF_GRID_SUBPANEL}}"] = self.resolve(r"{{OFF_GRID_SUBPANEL_OPTION}}") if data.system.ess_type == 0 else self.resolve(r"{{OFF_GRID_SUBPANEL_OMIT}}")
+        self.templates[r"{{ESS_TYPE}}"] = (
+            self.resolve(r"{{ESS_TYPE_ON_GRID}}")
+            if data.system.ess_type == 0
+            else self.resolve(r"{{ESS_TYPE_OFF_GRID}}")
+        )
+        self.templates[r"{{OFF_GRID_SUBPANEL}}"] = (
+            self.resolve(r"{{OFF_GRID_SUBPANEL_OPTION}}")
+            if data.system.ess_type == 0
+            else self.resolve(r"{{OFF_GRID_SUBPANEL_OMIT}}")
+        )
 
-        self.templates[r"{{PREPARED_DATE_MMDDYYYY}}"] = datetime.now().strftime("%m/%d/%Y")
+        self.templates[r"{{PREPARED_DATE_MMDDYYYY}}"] = datetime.now().strftime(
+            "%m/%d/%Y"
+        )
         self.templates[r"{{ENPHASE_PLATINUM_INSTALLER}}"] = (
             self.resolve(r"{{ENPHASE_PLATINUM_INSTALLER}}")
             if data.system.inverter.manufacturer == "Enphase Energy Inc."
             else ""
         )
-        self.templates[r"{{TREE_TRIMMING_REQUIRED}}"] = self.resolve(r"{{TREE_TRIMMING_REQUIRED}}") if data.system.tree_trimming_required else ""
-        self.templates[r"{{UTILITY_NEM}}"] = self.resolve(r"{{UTILITY_NEM_MID}}") if data.utility.name == "Modesto Irrigation District" else self.resolve(r"{{UTILITY_NEM_PGE}}")
-        self.templates[r"{{UTILITY_APPLICATION_DESCRIPTION}}"] = self.resolve(r"{{UTILITY_APPLICATION_DESCRIPTION_MID}}") if data.utility.name == "Modesto Irrigation District" else self.resolve(r"{{UTILITY_APPLICATION_DESCRIPTION_PGE}}")
+        self.templates[r"{{TREE_TRIMMING_REQUIRED}}"] = (
+            self.resolve(r"{{TREE_TRIMMING_REQUIRED}}")
+            if data.system.tree_trimming_required
+            else ""
+        )
+        self.templates[r"{{UTILITY_NEM}}"] = (
+            self.resolve(r"{{UTILITY_NEM_MID}}")
+            if data.utility.name == "Modesto Irrigation District"
+            else self.resolve(r"{{UTILITY_NEM_PGE}}")
+        )
+        self.templates[r"{{UTILITY_APPLICATION_DESCRIPTION}}"] = (
+            self.resolve(r"{{UTILITY_APPLICATION_DESCRIPTION_MID}}")
+            if data.utility.name == "Modesto Irrigation District"
+            else self.resolve(r"{{UTILITY_APPLICATION_DESCRIPTION_PGE}}")
+        )
         if data.system.type != 0:
-            self.templates[r"{{BATTERY_PLURAL}}"] = "Batteries" if data.system.battery.count > 1 else "Battery"
-        self.templates[r"{{UTILITY_LINK}}"] = self.resolve(r"{{UTILITY_LINK_MID}}") if data.utility.name == "Modesto Irrigation District" else self.resolve(r"{{UTILITY_LINK_PGE}}")
-        self.templates[r"{{APPLICATION_FEE}}"] = self.resolve(r'{{APPLICATION_FEE_MID}}') if data.utility.name == "Modesto Irrigation District" else self.resolve(r'{{APPLICATION_FEE_PGE}}')
-        self.templates[r"{{VARIANCE_APPROVAL}}"] = self.resolve(r'{{VARIANCE_APPROVAL_MID}}') if data.utility.name == "Modesto Irrigation District" else ""
+            self.templates[r"{{BATTERY_PLURAL}}"] = (
+                "Batteries" if data.system.battery.count > 1 else "Battery"
+            )
+        self.templates[r"{{UTILITY_LINK}}"] = (
+            self.resolve(r"{{UTILITY_LINK_MID}}")
+            if data.utility.name == "Modesto Irrigation District"
+            else self.resolve(r"{{UTILITY_LINK_PGE}}")
+        )
+        self.templates[r"{{APPLICATION_FEE}}"] = (
+            self.resolve(r"{{APPLICATION_FEE_MID}}")
+            if data.utility.name == "Modesto Irrigation District"
+            else self.resolve(r"{{APPLICATION_FEE_PGE}}")
+        )
+        self.templates[r"{{VARIANCE_APPROVAL}}"] = (
+            self.resolve(r"{{VARIANCE_APPROVAL_MID}}")
+            if data.utility.name == "Modesto Irrigation District"
+            else ""
+        )
 
         self.templates[r"{{PV_COST}}"] = f"${int(data.pricing.pv_cost):,}"
         self.templates[r"{{ESS_COST}}"] = f"${int(data.pricing.ess_cost):,}"
         self.templates[r"{{TOTAL_COST}}"] = f"${int(data.pricing.total_cost):,}"
         self.templates[r"{{LOAN_TERM}}"] = data.pricing.loan_term
-        self.templates[r"{{LOAN_INTEREST_RATE}}"] = f"{data.pricing.loan_interest_rate*100:.2f}"
-        self.templates[r"{{LOAN_MONTHLY_PAYMENT}}"] = f"${int(data.pricing.loan_monthly_payment):,}"
+        self.templates[r"{{LOAN_INTEREST_RATE}}"] = (
+            f"{data.pricing.loan_interest_rate * 100:.2f}"
+        )
+        self.templates[r"{{LOAN_MONTHLY_PAYMENT}}"] = (
+            f"${int(data.pricing.loan_monthly_payment):,}"
+        )
 
         data_fields = {
             "{{JOB_NAME}}": "project.name",
@@ -199,11 +289,13 @@ class TemplateManager:
                 "{{USAGE_PERCENTAGE}}",
             ):
                 self.provenance[placeholder] = pdf_provenance
-    
+
     def _update_from_settings_spreadsheet(self, data: DataManager):
         """Load configured aliases and fixed variables from the settings workbook."""
         if data.files.settings.is_file():
-            workbook = load_workbook(data.files.settings, data_only=True, read_only=True)
+            workbook = load_workbook(
+                data.files.settings, data_only=True, read_only=True
+            )
             sheet = workbook["Aliases"]
             for row_number, row in enumerate(
                 sheet.iter_rows(min_row=2, values_only=True), start=2
@@ -221,7 +313,7 @@ class TemplateManager:
                         ),
                         transformation="settings alias",
                     )
-    
+
             sheet = workbook["Variables"]
             for row_number, row in enumerate(
                 sheet.iter_rows(min_row=2, values_only=True), start=2
@@ -240,7 +332,6 @@ class TemplateManager:
                         transformation="settings variable",
                     )
             workbook.close()
-    
 
     def get_all(self):
         """Return the mapping of all current placeholder values."""

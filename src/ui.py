@@ -7,6 +7,7 @@ import traceback
 import webbrowser
 import json
 from pathlib import Path
+from typing import Any
 
 import customtkinter as ctk
 from tkinter import messagebox
@@ -309,7 +310,10 @@ class App(ctk.CTk):
     def _set_busy(self, busy):
         """Set busy state and enable or disable workflow buttons accordingly."""
         self._busy = busy
-        self._set_state_chip("WORKING" if busy else ("READY" if self.data.project.id else "IDLE"), busy=busy)
+        self._set_state_chip(
+            "WORKING" if busy else ("READY" if self.data.project.id else "IDLE"),
+            busy=busy,
+        )
 
         for action_name in self._action_order:
             button_data = self._action_buttons[action_name]
@@ -399,9 +403,7 @@ class App(ctk.CTk):
         if not button_data:
             return
 
-        button_data["button"].configure(
-            fg_color="#174B2D", hover_color="#106A43"
-        )
+        button_data["button"].configure(fg_color="#174B2D", hover_color="#106A43")
 
     def _handle_task_error(self, task_name, exc, traceback_text=""):
         """Restore the UI and show details for a failed workflow action."""
@@ -481,8 +483,7 @@ class App(ctk.CTk):
         template_report = self.templates.validation_report
         if template_report.errors or template_report.warnings:
             self._log(
-                f"Template validation "
-                f"(enforcement={template_report.enforcement}):"
+                f"Template validation (enforcement={template_report.enforcement}):"
             )
             for issue in template_report.errors + template_report.warnings:
                 self._log(f"{issue.severity.upper()} {issue.field}: {issue.message}")
@@ -503,7 +504,7 @@ class App(ctk.CTk):
         dialog.grab_set()
         dialog.resizable(False, False)
 
-        selected = {"project": {}}
+        selected: dict[str, dict[str, Any]] = {"project": {}}
         dialog.grid_columnconfigure(0, weight=1)
         dialog.grid_rowconfigure(1, weight=1)
         title_label = ctk.CTkLabel(
@@ -523,7 +524,7 @@ class App(ctk.CTk):
         list_frame = ctk.CTkScrollableFrame(dialog)
         list_frame.grid(row=1, column=0, padx=20, pady=10, sticky="nsew")
         list_frame.grid_columnconfigure(0, weight=1)
-        buttons = []
+        buttons: list[ctk.CTkButton] = []
 
         def select(index):
             """Highlight the selected project row."""
@@ -533,7 +534,6 @@ class App(ctk.CTk):
             buttons[index].configure(fg_color=("gray75", "gray25"))
 
         for index, name in enumerate(project_names):
-
             button = ctk.CTkButton(
                 list_frame,
                 text=name,
@@ -583,15 +583,24 @@ class App(ctk.CTk):
 
     def open_pricing_template(self):
         """Open the pricing spreadsheet template."""
-        template_path = self.settings.files.templates_folder / "pricing_spreadsheet.xlsx"
+        template_path = (
+            self.settings.files.templates_folder / "pricing_spreadsheet.xlsx"
+        )
         return self._open_template(template_path, "pricing spreadsheet")
 
     def open_cover_template(self):
         """Open the active cover letter template or the first available template."""
-        if self.data.files.cover_letter_template and self.data.files.cover_letter_template.is_file():
-            return self._open_template(self.data.files.cover_letter_template, "cover letter")
+        if (
+            self.data.files.cover_letter_template
+            and self.data.files.cover_letter_template.is_file()
+        ):
+            return self._open_template(
+                self.data.files.cover_letter_template, "cover letter"
+            )
 
-        candidates = sorted(self.settings.files.templates_folder.glob("cover_letter_*.docx"))
+        candidates = sorted(
+            self.settings.files.templates_folder.glob("cover_letter_*.docx")
+        )
         if candidates:
             return self._open_template(candidates[0], "cover letter")
 
@@ -729,8 +738,7 @@ class App(ctk.CTk):
         )
         return (
             f"Final proposal package created at {proposal_path}.\n"
-            f"Manifest: {self.data.files.proposal_manifest}.\n"
-            + open_status
+            f"Manifest: {self.data.files.proposal_manifest}.\n" + open_status
         )
 
     def draft_customer_email(self):
@@ -749,22 +757,27 @@ class App(ctk.CTk):
             lambda: self.office.copy_to_fileserver(self.data, self.settings),
         )
 
+
 if __name__ == "__main__":
     from dotenv import load_dotenv
+
     load_dotenv(Path(__file__).resolve().with_name(".env"))
-    
+
     from app_logging import (
         configure_logging,
         install_exception_hooks,
         set_crash_alert_parent,
     )
+
     logger = configure_logging()
     install_exception_hooks(logger)
 
-    try:    
+    try:
         app = App()
         set_crash_alert_parent(app)
         app.mainloop()
     except Exception:
-        logging.getLogger("mss_proposal_automation").exception("Application startup failed")
+        logging.getLogger("mss_proposal_automation").exception(
+            "Application startup failed"
+        )
         raise

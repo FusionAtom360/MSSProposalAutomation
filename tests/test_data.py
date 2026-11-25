@@ -176,9 +176,7 @@ def test_json_schema_controls_mapping_and_advisory_or_enforced_validation(tmp_pa
                 "properties": {
                     "project": {
                         "type": "object",
-                        "properties": {
-                            "id": {"type": "integer", "minimum": 1}
-                        },
+                        "properties": {"id": {"type": "integer", "minimum": 1}},
                     },
                     "system": {
                         "type": "object",
@@ -208,9 +206,7 @@ def test_json_schema_controls_mapping_and_advisory_or_enforced_validation(tmp_pa
                 "properties": {
                     "client": {
                         "type": "object",
-                        "properties": {
-                            "name": {"type": "string", "minLength": 1}
-                        },
+                        "properties": {"name": {"type": "string", "minLength": 1}},
                     }
                 },
             },

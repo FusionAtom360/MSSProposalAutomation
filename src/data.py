@@ -157,18 +157,14 @@ class DataManager:
 
         self.system.type = self._get_system_type()
         self.system.pv_size = self._get_field("system.pv_size")
-        self.system.panel.manufacturer = self._get_field(
-            "system.panel.manufacturer"
-        )
+        self.system.panel.manufacturer = self._get_field("system.panel.manufacturer")
         self.system.panel.model = self._get_field("system.panel.model")
         self.system.panel.type = self._get_field("system.panel.type")
         self.system.panel.size = self._get_field("system.panel.size")
         self.system.panel.ptc = self._get_panel_ptc()
         self.system.panel.warranty = self._get_field("system.panel.warranty")
         self.system.panel.count = self._get_field("system.panel.count", default=0)
-        self.system.panel.specsheet_url = self._get_field(
-            "system.panel.specsheet_url"
-        )
+        self.system.panel.specsheet_url = self._get_field("system.panel.specsheet_url")
 
         self.utility.name = self._get_field("utility.name", default="")
         self.utility.annual_consumption = self._calculate_annual_consumption(
@@ -185,9 +181,7 @@ class DataManager:
         )
         self.system.inverter.model = self._get_field("system.inverter.model")
         self.system.inverter.warranty = self._get_field("system.inverter.warranty")
-        self.system.inverter.count = self._get_field(
-            "system.inverter.count", default=0
-        )
+        self.system.inverter.count = self._get_field("system.inverter.count", default=0)
         self.system.inverter.specsheet_url = self._get_field(
             "system.inverter.specsheet_url"
         )
@@ -198,9 +192,7 @@ class DataManager:
         self.system.battery.model = self._get_field("system.battery.model")
         self.system.battery.capacity = self._get_field("system.battery.capacity")
         self.system.battery.warranty = self._get_field("system.battery.warranty")
-        self.system.battery.count = self._get_field(
-            "system.battery.count", default=0
-        )
+        self.system.battery.count = self._get_field("system.battery.count", default=0)
         self.system.battery.specsheet_url = self._get_field(
             "system.battery.specsheet_url"
         )
@@ -248,7 +240,7 @@ class DataManager:
         self.files.cover_letter_pdf = self.files.documents_folder / "cover_letter.pdf"
         self.files.final_proposal = (
             self.files.documents_folder
-            / f"{datetime.now().strftime('%y_%m%d')} {self.client.last_name}, {self.client.first_name} {"PV" if self.system.type == 0 else "ESS" if self.system.type == 1 else "PV ESS"} Proposal.pdf"
+            / f"{datetime.now().strftime('%y_%m%d')} {self.client.last_name}, {self.client.first_name} {'PV' if self.system.type == 0 else 'ESS' if self.system.type == 1 else 'PV ESS'} Proposal.pdf"
         )
 
         self.validation_report = self.validate_fields()
@@ -275,9 +267,7 @@ class DataManager:
             ),
         )
 
-    def record_provenance(
-        self, field_name: str, provenance: FieldProvenance
-    ) -> None:
+    def record_provenance(self, field_name: str, provenance: FieldProvenance) -> None:
         """Associate source and transformation details with a model field."""
         self.field_provenance[field_name] = provenance
 
@@ -294,7 +284,9 @@ class DataManager:
             self.record_provenance(
                 field_name,
                 FieldProvenance(
-                    source="environment" if environment_value is not None else "fallback",
+                    source="environment"
+                    if environment_value is not None
+                    else "fallback",
                     source_path=(environment_name,),
                     used_fallback=environment_value is None,
                 ),
@@ -317,12 +309,8 @@ class DataManager:
 
     def format_validation_report(self) -> str:
         """Format validation issues with each field's source details."""
-        lines = [
-            f"Data validation (enforcement={self.validation_report.enforcement}):"
-        ]
-        for issue in (
-            self.validation_report.errors + self.validation_report.warnings
-        ):
+        lines = [f"Data validation (enforcement={self.validation_report.enforcement}):"]
+        for issue in self.validation_report.errors + self.validation_report.warnings:
             provenance = self.field_provenance.get(issue.field)
             origin = ""
             if provenance is not None:
@@ -436,9 +424,7 @@ class DataManager:
             if name in self.field_provenance
         ]
         source_path = (
-            input_provenance[0].source_path
-            if len(input_provenance) == 1
-            else None
+            input_provenance[0].source_path if len(input_provenance) == 1 else None
         )
         self.record_provenance(
             field_name,
@@ -721,7 +707,10 @@ class DataManager:
                 else self.system.battery.count
             )
             for field_name, cell in (
-                ("system.tree_trimming_required", self.references.tree_trimming_required),
+                (
+                    "system.tree_trimming_required",
+                    self.references.tree_trimming_required,
+                ),
                 ("system.ess_type", self.references.ess_type),
                 ("pricing.pv_cost", self.references.pv_cost),
                 ("pricing.ess_cost", self.references.ess_cost),
@@ -908,7 +897,7 @@ class DataManager:
             size: int = 0
             type: str = ""
             warranty: int = 0
-            ptc: int = 0
+            ptc: int | None = 0
             count: int = 0
             specsheet_url: str = ""
 
@@ -945,9 +934,7 @@ class DataManager:
         cost_per_watt: float = 0.0
         loan_term: int = int(_LOAN_TERM_ENV if _LOAN_TERM_ENV is not None else "0")
         loan_interest_rate: float = float(
-            _LOAN_INTEREST_RATE_ENV
-            if _LOAN_INTEREST_RATE_ENV is not None
-            else "0.0"
+            _LOAN_INTEREST_RATE_ENV if _LOAN_INTEREST_RATE_ENV is not None else "0.0"
         )
         loan_monthly_payment: float = 0
 

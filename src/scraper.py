@@ -58,11 +58,7 @@ def extract_proposal_pdf_metrics(pdf_content: bytes) -> ProposalPdfMetrics:
         )
 
     usage_page = next(
-        (
-            page
-            for page in pages
-            if re.search(r"Usage breakdown", page, re.IGNORECASE)
-        ),
+        (page for page in pages if re.search(r"Usage breakdown", page, re.IGNORECASE)),
         None,
     )
     if usage_page is None:
@@ -100,7 +96,7 @@ class Scraper:
         self.browser_channel = browser_channel
         self.spec_sheet_counter = 0
         self.http = AuthenticatedHttpClient()
-        
+
     def _dismiss_cookie_banner(self, page) -> None:
         """Dismiss the OneTrust cookie banner when the page presents it."""
         reject_button = page.locator("#onetrust-reject-all-handler")
@@ -116,7 +112,9 @@ class Scraper:
         password = os.getenv("SOLARGRAF_PASSWORD")
 
         if not email or not password:
-            raise RuntimeError("SOLARGRAF_EMAIL and SOLARGRAF_PASSWORD must be set before signing in")
+            raise RuntimeError(
+                "SOLARGRAF_EMAIL and SOLARGRAF_PASSWORD must be set before signing in"
+            )
 
         page.locator("#login_credentials_textfield_email").fill(email)
         page.locator("#login_credentials_textfield_password").fill(password)
@@ -126,9 +124,13 @@ class Scraper:
 
     def _extract_project_id(self, payload: dict) -> str:
         """Extract a project identifier from common response fields."""
-        project_id = payload.get("project_id") or payload.get("id") or payload.get("_id")
+        project_id = (
+            payload.get("project_id") or payload.get("id") or payload.get("_id")
+        )
         if not project_id:
-            raise RuntimeError("Project response did not include a project_id, id, or _id field")
+            raise RuntimeError(
+                "Project response did not include a project_id, id, or _id field"
+            )
 
         return str(project_id)
 
@@ -152,12 +154,11 @@ class Scraper:
         )
         if not response.ok:
             raise RuntimeError(
-                "Failed to retrieve project data: "
-                f"HTTP {response.status_code}"
+                f"Failed to retrieve project data: HTTP {response.status_code}"
             )
-        
+
         return response.json()
-    
+
     def get_proposal_document(self, data: DataManager) -> Path:
         """Download a project's proposal PDF, extract its metrics, and open it."""
         data.validate_for_document_generation("proposal_download")
@@ -168,16 +169,11 @@ class Scraper:
             f"{data.project.proposal_id}/"
             f"{data.project.financial_id}.pdf"
         )
-        download_url = (
-            f"{base_url}"
-            f"{pdf_path}"
-            f"?lang=en"
-        )
+        download_url = f"{base_url}{pdf_path}?lang=en"
         response = self.http.get(download_url)
         if not response.ok:
             raise RuntimeError(
-                "Failed to download proposal PDF: "
-                f"HTTP {response.status_code}"
+                f"Failed to download proposal PDF: HTTP {response.status_code}"
             )
 
         metrics = extract_proposal_pdf_metrics(response.content)
@@ -186,7 +182,7 @@ class Scraper:
         os.startfile(data.files.solargraf_proposal)
 
         return data.files.solargraf_proposal
-    
+
     @staticmethod
     def _is_http_url(value: str) -> bool:
         """Return whether value is an absolute HTTP or HTTPS URL."""
@@ -203,16 +199,11 @@ class Scraper:
             raise ValueError(f"URL must be a valid HTTP(S) URL, got: {url!r}")
 
         with sync_playwright() as p:
-            request_context = p.request.new_context(
-                timeout=self.http.timeout * 1000
-            )
+            request_context = p.request.new_context(timeout=self.http.timeout * 1000)
 
             response = request_context.get(normalized_url)
             if not response.ok:
-                raise RuntimeError(
-                    "Failed to download: "
-                    f"HTTP {response.status}"
-                )
+                raise RuntimeError(f"Failed to download: HTTP {response.status}")
 
             target_dir = Path(output_dir) if output_dir else Path("downloads")
             output_path = target_dir / f"{self.spec_sheet_counter}.pdf"
@@ -228,13 +219,14 @@ class Scraper:
         """Fetch a spec-sheet URL with the authenticated HTTP session."""
         url = url.strip()
         if not url or not self._is_http_url(url):
-            raise ValueError(f"Spec sheet URL must be a valid HTTP(S) URL, got: {url!r}")
+            raise ValueError(
+                f"Spec sheet URL must be a valid HTTP(S) URL, got: {url!r}"
+            )
 
         response = self.http.get(url)
         if not response.ok:
             raise RuntimeError(
-                "Failed to download spec sheet PDF: "
-                f"HTTP {response.status_code}"
+                f"Failed to download spec sheet PDF: HTTP {response.status_code}"
             )
 
         output_path = output_dir / f"{self.spec_sheet_counter}.pdf"
@@ -243,7 +235,7 @@ class Scraper:
         self.spec_sheet_counter += 1
 
         return output_path
-    
+
     def get_projects(self, settings: SettingsManager) -> list[dict]:
         """Return recent company projects in the application's selection shape."""
         self._refresh_auth_token(settings)
@@ -257,8 +249,7 @@ class Scraper:
         )
         if not response.ok:
             raise RuntimeError(
-                "Failed to retrieve projects: "
-                f"HTTP {response.status_code}"
+                f"Failed to retrieve projects: HTTP {response.status_code}"
             )
 
         project_data = []
@@ -280,9 +271,7 @@ class Scraper:
             return
 
         request_auth_key = os.getenv("REQUEST_AUTH_KEY", "")
-        if request_auth_key and self.http.get(
-            endpoint, auth_key=request_auth_key
-        ).ok:
+        if request_auth_key and self.http.get(endpoint, auth_key=request_auth_key).ok:
             settings.set_auth_key(request_auth_key)
             return
 
@@ -290,16 +279,21 @@ class Scraper:
 
     def _wait_for_auth_token(self, settings: SettingsManager) -> None:
         """Wait for a token submitted to the local receiver and persist it."""
-        if self.http.get("https://api.solargraf.com/companies/27792/projects", headers={"authorization": f"Bearer {settings.auth.key}"}, timeout=30).ok:
+        if self.http.get(
+            "https://api.solargraf.com/companies/27792/projects",
+            headers={"authorization": f"Bearer {settings.auth.key}"},
+            timeout=30,
+        ).ok:
             return
-        if self.http.get("https://api.solargraf.com/companies/27792/projects", headers={"authorization": f"Bearer {os.getenv("REQUEST_AUTH_KEY")}"}, timeout=30).ok:
+        if self.http.get(
+            "https://api.solargraf.com/companies/27792/projects",
+            headers={"authorization": f"Bearer {os.getenv('REQUEST_AUTH_KEY')}"},
+            timeout=30,
+        ).ok:
             settings.set_auth_key(str(os.getenv("REQUEST_AUTH_KEY")))
             return
         server = TokenHTTPServer(("127.0.0.1", 8765))
-        thread = threading.Thread(
-            target=server.serve_forever,
-            daemon=True
-        )
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
         thread.start()
         print("Waiting for Solargraf authentication...")
         try:
@@ -309,7 +303,9 @@ class Scraper:
 
             token = server.session.token
             if token is None:
-                raise RuntimeError("Token receiver signaled completion without a token.")
+                raise RuntimeError(
+                    "Token receiver signaled completion without a token."
+                )
 
             settings.set_auth_key(token)
             set_key(

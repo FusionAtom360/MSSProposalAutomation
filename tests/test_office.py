@@ -175,9 +175,10 @@ def test_finalize_combines_and_trims_cover_proposal_and_spec_sheets(
     assert result.parent.name == data.files.proposal_package_folder.name
     manifest = json.loads(data.files.proposal_manifest.read_text(encoding="utf-8"))
     assert manifest["run_id"] == result.parent.name
-    assert manifest["inputs"]["solargraf_proposal_pdf"]["snapshot_sha256"] == hashlib.sha256(
-        proposal_pdf.read_bytes()
-    ).hexdigest()
+    assert (
+        manifest["inputs"]["solargraf_proposal_pdf"]["snapshot_sha256"]
+        == hashlib.sha256(proposal_pdf.read_bytes()).hexdigest()
+    )
     final_record = next(
         artifact
         for artifact in manifest["artifacts"]
@@ -217,25 +218,25 @@ def test_finalize_combines_and_trims_cover_proposal_and_spec_sheets(
         OfficeDocumentManager().finalize_proposal(data, Variables(), scraper)
 
     assert all(
-        path.read_bytes() == content
-        for path, content in original_packages.items()
+        path.read_bytes() == content for path, content in original_packages.items()
     )
-    assert sorted(
-        path.name for path in (documents / "proposal_packages").iterdir()
-    ) == packages_before_failure
+    assert (
+        sorted(path.name for path in (documents / "proposal_packages").iterdir())
+        == packages_before_failure
+    )
     assert not list((documents / ".proposal-staging").iterdir())
 
     images = root / "images"
     images.mkdir()
     (images / "site-photo.jpg").write_bytes(b"fixture image")
     data.files.images_folder = images
-    settings = SimpleNamespace(
-        files=SimpleNamespace(bids_folder=root / "bids")
-    )
+    settings = SimpleNamespace(files=SimpleNamespace(bids_folder=root / "bids"))
     fileserver_package = OfficeDocumentManager().copy_to_fileserver(data, settings)
     assert (fileserver_package / "proposal_package" / "manifest.json").is_file()
     assert (fileserver_package / "images").is_dir()
-    assert (fileserver_package / "images" / "site-photo.jpg").read_bytes() == b"fixture image"
+    assert (
+        fileserver_package / "images" / "site-photo.jpg"
+    ).read_bytes() == b"fixture image"
     with pytest.raises(FileExistsError):
         OfficeDocumentManager().copy_to_fileserver(data, settings)
 

@@ -137,6 +137,7 @@ def report_tk_callback_exception(
 
 def _show_crash_dialog(log_text: str, parent=None) -> None:
     """Display a modal crash dialog with email-support and close actions."""
+    dialog: Tk | Toplevel
     if parent is None:
         dialog = Tk()
     else:

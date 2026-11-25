@@ -209,19 +209,23 @@ class UpdateManager:
 
     def start_check(self):
         """Start the progress indicator and launch release discovery."""
-        self.progress.configure(mode="indeterminate")
-        self.progress.start()
+        progress = self.progress
+        assert progress is not None
+        progress.configure(mode="indeterminate")
+        progress.start()
         threading.Thread(target=self.check_update_thread, daemon=True).start()
 
     def check_update_thread(self):
         """Find a newer release and schedule the result on the UI thread."""
+        window = self.window
+        assert window is not None
         try:
             latest = self.latest_release()
             if latest is not None:
                 self.release, self.release_version = latest
-                self.window.after(0, self.start_update)
+                window.after(0, self.start_update)
             else:
-                self.window.after(0, lambda: self.finish("Application is up to date."))
+                window.after(0, lambda: self.finish("Application is up to date."))
         except (
             OSError,
             urllib.error.URLError,
@@ -235,7 +239,7 @@ class UpdateManager:
                 f"{type(error).__name__}: {error}\n\n"
                 f"{traceback.format_exc()}"
             )
-            self.window.after(0, lambda message=error_message: self.finish(message))
+            window.after(0, lambda message=error_message: self.finish(message))
 
     def start_update(self):
         """Ask for installation confirmation before starting the update worker."""
@@ -243,23 +247,29 @@ class UpdateManager:
         if version is None:
             self.finish("Update failed: no release version was selected.")
             return
+        window = self.window
+        status = self.status
+        assert window is not None
+        assert status is not None
         if not messagebox.askyesno(
             "Update available",
             f"Install signed version {version}?\n\n"
             "The release will be verified before application files are changed.",
-            parent=self.window,
+            parent=window,
         ):
             self.finish("Update skipped.")
             return
 
-        self.status.configure(text=f"Verifying and downloading {version}...")
+        status.configure(text=f"Verifying and downloading {version}...")
         threading.Thread(target=self.update_thread, daemon=True).start()
 
     def update_thread(self):
         """Install the selected release and schedule completion or error status."""
+        window = self.window
+        assert window is not None
         try:
             self.update()
-            self.window.after(0, lambda: self.finish("Update complete."))
+            window.after(0, lambda: self.finish("Update complete."))
         except (
             OSError,
             urllib.error.URLError,
@@ -274,12 +284,18 @@ class UpdateManager:
                 f"{type(error).__name__}: {error}\n\n"
                 f"{traceback.format_exc()}"
             )
-            self.window.after(0, lambda message=error_message: self.finish(message))
+            window.after(0, lambda message=error_message: self.finish(message))
 
     def finish(self, message):
         """Display a final updater status and close the updater window shortly."""
-        self.progress.stop()
-        self.progress.configure(mode="determinate")
-        self.progress.set(1)
-        self.status.configure(text=message)
-        self.window.after(100, self.window.destroy)
+        window = self.window
+        status = self.status
+        progress = self.progress
+        assert window is not None
+        assert status is not None
+        assert progress is not None
+        progress.stop()
+        progress.configure(mode="determinate")
+        progress.set(1)
+        status.configure(text=message)
+        window.after(100, window.destroy)

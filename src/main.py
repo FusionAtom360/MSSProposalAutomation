@@ -1,6 +1,7 @@
 """Application entry point and startup error handling."""
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
 
 
@@ -8,7 +9,7 @@ def main():
     """Initialize services and run the update and main application windows."""
     logger = logging.getLogger("mss_proposal_automation")
     app = None
-    show_crash_alert = None
+    show_crash_alert: Callable[..., None] | None = None
     try:
         from app_logging import (
             configure_logging,
