@@ -5,8 +5,36 @@ from types import SimpleNamespace
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from data import DataManager
+from data import DataManager, ProposalPdfMetrics
 from ui import App
+
+
+def test_download_proposal_document_refreshes_templates_with_pdf_metrics(tmp_path):
+    data = DataManager()
+    data.files.solargraf_proposal = tmp_path / "solargraf_proposal.pdf"
+    template_updates = []
+
+    class Scraper:
+        def get_proposal_document(self, project_data):
+            project_data.proposal_pdf_metrics = ProposalPdfMetrics(
+                system_size_kw=11.31,
+                annual_production_kwh=15925.6,
+                usage_percentage=116,
+            )
+            return project_data.files.solargraf_proposal
+
+    app = SimpleNamespace(
+        _require_project=lambda: None,
+        data=data,
+        scraper=Scraper(),
+        templates=SimpleNamespace(update=template_updates.append),
+    )
+
+    result = App.download_proposal_document(app)
+
+    assert result == f"Downloaded proposal document to {data.files.solargraf_proposal}."
+    assert template_updates == [data]
+    assert data.proposal_pdf_metrics.annual_production_kwh == 15925.6
 
 
 def test_continue_local_project_uses_saved_data_without_rewriting_it(tmp_path):

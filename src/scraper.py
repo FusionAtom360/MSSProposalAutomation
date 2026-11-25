@@ -1,4 +1,5 @@
 import re
+from io import BytesIO
 from urllib.parse import urlparse
 import os
 from pathlib import Path
@@ -8,13 +9,78 @@ from settings import SettingsManager
 import threading
 
 from playwright.sync_api import sync_playwright
+from pypdf import PdfReader
 import webbrowser
 
-from data import DataManager
+from data import DataManager, ProposalPdfMetrics
 from http_client import AuthenticatedHttpClient
 from token_receiver import TokenHTTPServer
 
 load_dotenv(Path(__file__).with_name(".env"))
+
+_PDF_NUMBER = r"([\d,]+(?:\.\d+)?)"
+
+
+def _extract_pdf_number(text: str, label: str, unit: str) -> float:
+    normalized_text = re.sub(r"\s+", " ", text)
+    match = re.search(
+        rf"{re.escape(label)}\s*{_PDF_NUMBER}\s*{unit}",
+        normalized_text,
+        re.IGNORECASE,
+    )
+    if match is None:
+        raise ValueError(f"Could not extract {label!r} from the proposal PDF.")
+    return float(match.group(1).replace(",", ""))
+
+
+def extract_proposal_pdf_metrics(pdf_content: bytes) -> ProposalPdfMetrics:
+    pages = [
+        re.sub(r"\s+", " ", page.extract_text() or "")
+        for page in PdfReader(BytesIO(pdf_content)).pages
+    ]
+    summary_page = next(
+        (
+            page
+            for page in pages
+            if re.search(r"System size", page, re.IGNORECASE)
+            and re.search(r"Consumption offset", page, re.IGNORECASE)
+        ),
+        None,
+    )
+    if summary_page is None:
+        raise ValueError(
+            "Could not find the system size and consumption offset summary "
+            "in the proposal PDF."
+        )
+
+    usage_page = next(
+        (
+            page
+            for page in pages
+            if re.search(r"Usage breakdown", page, re.IGNORECASE)
+        ),
+        None,
+    )
+    if usage_page is None:
+        raise ValueError("Could not find the usage breakdown in the proposal PDF.")
+
+    usage_percentage = _extract_pdf_number(
+        summary_page,
+        "Consumption offset",
+        r"%",
+    )
+    if usage_percentage.is_integer():
+        usage_percentage = int(usage_percentage)
+
+    return ProposalPdfMetrics(
+        system_size_kw=_extract_pdf_number(summary_page, "System size", r"kW\s*DC"),
+        annual_production_kwh=_extract_pdf_number(
+            usage_page,
+            "Estimated first year production",
+            r"kWh",
+        ),
+        usage_percentage=usage_percentage,
+    )
 
 
 TARGET_PROJECT_PAGE = re.compile(r"^https://app\.solargraf\.com/projects/[^/?#]+$")
@@ -101,7 +167,9 @@ class Scraper:
                 f"HTTP {response.status_code}"
             )
 
+        metrics = extract_proposal_pdf_metrics(response.content)
         data.files.solargraf_proposal.write_bytes(response.content)
+        data.proposal_pdf_metrics = metrics
         os.startfile(data.files.solargraf_proposal)
 
         return data.files.solargraf_proposal

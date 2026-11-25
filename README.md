@@ -251,16 +251,10 @@ before publishing. A push to `main` publishes a commit-specific prerelease;
 push a `vX.Y.Z` tag to publish a stable release. Before creating a stable tag,
 update `src/details.json` to the same `X.Y.Z` version and include that change in
 the tagged commit.
-
+docs/
 Each release contains a versioned source ZIP, a SHA-256 manifest, and a
 Sigstore bundle. Release metadata pins the exact commit and triggering ref.
 Updates are prompted, signature-verified against this repository's GitHub
 Actions workflow, checked before extraction, and installed from a staging
 directory with rollback. `src/.env` and local logs are carried forward and are
 not included in release packages.
-
-## Developer documentation
-
-See [`docs/DEVELOPMENT.md`](docs/DEVELOPMENT.md) for the module map, local development workflow, templates, testing guidance, and safe change practices.
-
-See [`dev/TECHNICAL_REVIEW.md`](dev/TECHNICAL_REVIEW.md) for the adversarial technical review and prioritized engineering gaps.

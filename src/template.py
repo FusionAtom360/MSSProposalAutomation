@@ -19,6 +19,16 @@ class TemplateManager:
         self.validation_report = ValidationReport(
             enforcement=data.field_schema.enforcement
         )
+        for placeholder in (
+            "{{PV_SIZE}}",
+            "{{TOTAL_SIZE}}",
+            "{{USAGE_PERCENTAGE}}",
+        ):
+            provenance = self.provenance.get(placeholder)
+            if provenance is not None and provenance.source == "solargraf_pdf":
+                self.provenance.pop(placeholder, None)
+                if placeholder != "{{PV_SIZE}}":
+                    self.templates.pop(placeholder, None)
         self._update_from_settings_spreadsheet(data)
         self.templates[r"{{JOB_NAME}}"] = data.project.name.upper()
         self.templates[r"{{CLIENT_NAME}}"] = data.client.name
@@ -166,6 +176,23 @@ class TemplateManager:
                             transformation="settings alias applied",
                             derived_from=(source_field,),
                         )
+
+        if data.proposal_pdf_metrics is not None:
+            metrics = data.proposal_pdf_metrics
+            pdf_provenance = FieldProvenance(
+                source="solargraf_pdf",
+                source_path=(str(data.files.solargraf_proposal),),
+                transformation="extracted from proposal PDF",
+            )
+            self.templates["{{PV_SIZE}}"] = metrics.system_size_kw
+            self.templates["{{TOTAL_SIZE}}"] = f"{int(metrics.annual_production_kwh):,}"
+            self.templates["{{USAGE_PERCENTAGE}}"] = metrics.usage_percentage
+            for placeholder in (
+                "{{PV_SIZE}}",
+                "{{TOTAL_SIZE}}",
+                "{{USAGE_PERCENTAGE}}",
+            ):
+                self.provenance[placeholder] = pdf_provenance
     
     def _update_from_settings_spreadsheet(self, data: DataManager):
         if data.files.settings.is_file():

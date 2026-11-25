@@ -5,8 +5,34 @@ from openpyxl import Workbook
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from data import DataManager
+from data import DataManager, ProposalPdfMetrics
 from template import TemplateManager
+
+
+def test_proposal_pdf_metrics_populate_and_clear_template_values(tmp_path):
+    data = DataManager()
+    data.files.settings = tmp_path / "missing-settings.xlsx"
+    data.files.solargraf_proposal = tmp_path / "solargraf_proposal.pdf"
+    data.system.pv_size = 7.83
+    data.proposal_pdf_metrics = ProposalPdfMetrics(
+        system_size_kw=11.31,
+        annual_production_kwh=15925.6,
+        usage_percentage=116,
+    )
+
+    templates = TemplateManager(data)
+
+    assert templates.resolve("{{PV_SIZE}}") == 11.31
+    assert templates.resolve("{{TOTAL_SIZE}}") == 15925.6
+    assert templates.resolve("{{USAGE_PERCENTAGE}}") == 116
+    assert templates.provenance["{{TOTAL_SIZE}}"].source == "solargraf_pdf"
+
+    data.proposal_pdf_metrics = None
+    templates.update(data)
+
+    assert templates.resolve("{{PV_SIZE}}") == 7.83
+    assert templates.resolve("{{TOTAL_SIZE}}") == "{{TOTAL_SIZE}}"
+    assert templates.resolve("{{USAGE_PERCENTAGE}}") == "{{USAGE_PERCENTAGE}}"
 
 
 def test_pv_templates_do_not_access_battery_fields():

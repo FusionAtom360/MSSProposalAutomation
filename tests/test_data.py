@@ -7,7 +7,28 @@ from openpyxl import Workbook
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from data import DataManager
+from data import DataManager, ProposalPdfMetrics
+
+
+def test_load_json_clears_proposal_pdf_metrics():
+    data = DataManager()
+    data.proposal_pdf_metrics = ProposalPdfMetrics(
+        system_size_kw=11.31,
+        annual_production_kwh=15925.6,
+        usage_percentage=116,
+    )
+
+    data.load_json(
+        {
+            "id": 123,
+            "public_id": "project-api-id",
+            "client_name": "Ada Lovelace",
+            "Materials": {},
+        },
+        save_to_file=False,
+    )
+
+    assert data.proposal_pdf_metrics is None
 
 
 def test_missing_battery_data_classifies_system_as_pv():

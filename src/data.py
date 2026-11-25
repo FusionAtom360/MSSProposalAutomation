@@ -20,6 +20,15 @@ from field_schema import (
 _UNSET = object()
 _LOAN_TERM_ENV = os.getenv("LOAN_TERM")
 _LOAN_INTEREST_RATE_ENV = os.getenv("LOAN_INTEREST_RATE")
+
+
+@dataclass(frozen=True)
+class ProposalPdfMetrics:
+    system_size_kw: float
+    annual_production_kwh: float
+    usage_percentage: float
+
+
 _MODEL_FIELD_NAMES = (
     "project.id",
     "project.api_id",
@@ -77,6 +86,7 @@ _MODEL_FIELD_NAMES = (
 class DataManager:
     def __init__(self):
         self.data = {}
+        self.proposal_pdf_metrics: ProposalPdfMetrics | None = None
         self.settings = SettingsManager()
         self.field_schema_path = Path(__file__).with_name("field_schema.json")
         self.field_schema = load_field_schema(self.field_schema_path)
@@ -96,6 +106,7 @@ class DataManager:
         self.references = self.References()
 
     def load_json(self, json_data: dict, save_to_file: bool = True):
+        self.proposal_pdf_metrics = None
         self.field_schema = load_field_schema(self.field_schema_path)
         previous_provenance = self.field_provenance.copy()
         self.field_provenance = {}

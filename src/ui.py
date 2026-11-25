@@ -647,6 +647,7 @@ class App(ctk.CTk):
     def download_proposal_document(self):
         self._require_project()
         output_path = self.scraper.get_proposal_document(self.data)
+        self.templates.update(self.data)
         return f"Downloaded proposal document to {output_path}."
 
     def open_pricing_spreadsheet(self):
