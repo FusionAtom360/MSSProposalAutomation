@@ -2,6 +2,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
@@ -12,7 +13,7 @@ from ui import App
 def test_download_proposal_document_refreshes_templates_with_pdf_metrics(tmp_path):
     data = DataManager()
     data.files.solargraf_proposal = tmp_path / "solargraf_proposal.pdf"
-    template_updates = []
+    template_updates: list[DataManager] = []
 
     class Scraper:
         def get_proposal_document(self, project_data):
@@ -23,21 +24,27 @@ def test_download_proposal_document_refreshes_templates_with_pdf_metrics(tmp_pat
             )
             return project_data.files.solargraf_proposal
 
-    app = SimpleNamespace(
-        _require_project=lambda: None,
-        data=data,
-        scraper=Scraper(),
-        templates=SimpleNamespace(update=template_updates.append),
+    app = cast(
+        App,
+        SimpleNamespace(
+            _require_project=lambda: None,
+            data=data,
+            scraper=Scraper(),
+            templates=SimpleNamespace(update=template_updates.append),
+        ),
     )
 
     result = App.download_proposal_document(app)
 
     assert result == f"Downloaded proposal document to {data.files.solargraf_proposal}."
     assert template_updates == [data]
+    assert data.proposal_pdf_metrics is not None
     assert data.proposal_pdf_metrics.annual_production_kwh == 15925.6
 
 
-def test_continue_local_project_uses_saved_data_without_rewriting_it(tmp_path):
+def test_continue_local_project_uses_saved_data_without_rewriting_it(
+    tmp_path, monkeypatch
+):
     projects_folder = tmp_path / "projects"
     project_folder = projects_folder / "123"
     project_folder.mkdir(parents=True)
@@ -59,8 +66,8 @@ def test_continue_local_project_uses_saved_data_without_rewriting_it(tmp_path):
         assert save_to_file is False
         load_json(payload, save_to_file=save_to_file)
 
-    data.load_json = load_without_saving
-    template_updates = []
+    monkeypatch.setattr(data, "load_json", load_without_saving)
+    template_updates: list[DataManager] = []
     selected_projects = {}
 
     def select_project(projects, *, title, confirm_text):
@@ -69,13 +76,16 @@ def test_continue_local_project_uses_saved_data_without_rewriting_it(tmp_path):
         selected_projects["confirm_text"] = confirm_text
         return projects[0]
 
-    app = SimpleNamespace(
-        settings=SimpleNamespace(
-            files=SimpleNamespace(projects_folder=projects_folder)
+    app = cast(
+        App,
+        SimpleNamespace(
+            settings=SimpleNamespace(
+                files=SimpleNamespace(projects_folder=projects_folder)
+            ),
+            data=data,
+            templates=SimpleNamespace(update=template_updates.append),
+            _select_project_dialog=select_project,
         ),
-        data=data,
-        templates=SimpleNamespace(update=template_updates.append),
-        _select_project_dialog=select_project,
     )
 
     result = App.continue_local_project(app)
@@ -109,20 +119,23 @@ def test_finalize_creates_package_without_drafting_email_or_copying_to_bids(
             calls.append("bids")
             return published_path
 
-    app = SimpleNamespace(
-        _require_project=lambda: None,
-        _run_post_generation_action=App._run_post_generation_action,
-        office=Office(),
-        data=SimpleNamespace(
-            files=SimpleNamespace(
-                final_proposal=final_proposal,
-                proposal_manifest=manifest,
+    app = cast(
+        App,
+        SimpleNamespace(
+            _require_project=lambda: None,
+            _run_post_generation_action=App._run_post_generation_action,
+            office=Office(),
+            data=SimpleNamespace(
+                files=SimpleNamespace(
+                    final_proposal=final_proposal,
+                    proposal_manifest=manifest,
+                ),
+                project=SimpleNamespace(id=123),
             ),
-            project=SimpleNamespace(id=123),
+            templates=object(),
+            scraper=object(),
+            settings=object(),
         ),
-        templates=object(),
-        scraper=object(),
-        settings=object(),
     )
     monkeypatch.setattr("ui.os.startfile", lambda path: None)
 
@@ -136,14 +149,17 @@ def test_finalize_creates_package_without_drafting_email_or_copying_to_bids(
 
 def test_draft_customer_email_runs_as_a_separate_action():
     calls = []
-    app = SimpleNamespace(
-        _require_project=lambda: None,
-        _run_post_generation_action=App._run_post_generation_action,
-        office=SimpleNamespace(
-            generate_email=lambda data, templates: calls.append("email")
+    app = cast(
+        App,
+        SimpleNamespace(
+            _require_project=lambda: None,
+            _run_post_generation_action=App._run_post_generation_action,
+            office=SimpleNamespace(
+                generate_email=lambda data, templates: calls.append("email")
+            ),
+            data=object(),
+            templates=object(),
         ),
-        data=object(),
-        templates=object(),
     )
 
     result = App.draft_customer_email(app)
@@ -155,16 +171,20 @@ def test_draft_customer_email_runs_as_a_separate_action():
 def test_copy_to_bids_folder_runs_as_a_separate_action():
     published_path = Path("published")
     calls = []
-    app = SimpleNamespace(
-        _require_project=lambda: None,
-        _run_post_generation_action=App._run_post_generation_action,
-        office=SimpleNamespace(
-            copy_to_fileserver=lambda data, settings: (
-                calls.append("bids") or published_path
-            )
+
+    def copy_to_fileserver(data, settings):
+        calls.append("bids")
+        return published_path
+
+    app = cast(
+        App,
+        SimpleNamespace(
+            _require_project=lambda: None,
+            _run_post_generation_action=App._run_post_generation_action,
+            office=SimpleNamespace(copy_to_fileserver=copy_to_fileserver),
+            data=object(),
+            settings=object(),
         ),
-        data=object(),
-        settings=object(),
     )
 
     result = App.copy_to_bids_folder(app)

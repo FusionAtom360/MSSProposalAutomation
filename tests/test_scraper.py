@@ -105,10 +105,15 @@ def test_get_proposal_document_saves_pdf_metrics_for_templates(tmp_path, monkeyp
     response = SimpleNamespace(ok=True, status_code=200, content=b"proposal-pdf")
     requested_urls = []
     instance = scraper.Scraper()
+
+    def get_response(url, **_):
+        requested_urls.append(url)
+        return response
+
     monkeypatch.setattr(
         instance.http,
         "get",
-        lambda url, **_: requested_urls.append(url) or response,
+        get_response,
     )
     monkeypatch.setattr(
         scraper,

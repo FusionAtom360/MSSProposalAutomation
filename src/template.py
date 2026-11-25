@@ -281,7 +281,7 @@ class TemplateManager:
                 transformation="extracted from proposal PDF",
             )
             self.templates["{{PV_SIZE}}"] = metrics.system_size_kw
-            self.templates["{{TOTAL_SIZE}}"] = f"{int(metrics.annual_production_kwh):,}"
+            self.templates["{{TOTAL_SIZE}}"] = f"{metrics.annual_production_kwh:,}"
             self.templates["{{USAGE_PERCENTAGE}}"] = metrics.usage_percentage
             for placeholder in (
                 "{{PV_SIZE}}",

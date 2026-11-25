@@ -5,6 +5,7 @@ from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import Mock
 
 import pytest
@@ -16,6 +17,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from data import DataManager
 from office import OfficeDocumentManager
+from scraper import Scraper as AppScraper
+from settings import SettingsManager
 
 
 def test_finalize_validates_prerequisites_before_external_operations(monkeypatch):
@@ -24,7 +27,9 @@ def test_finalize_validates_prerequisites_before_external_operations(monkeypatch
     monkeypatch.setattr("office.docx2pdf.convert", convert)
 
     with pytest.raises(ValueError, match="project ID"):
-        OfficeDocumentManager().finalize_proposal(data, object(), object())
+        OfficeDocumentManager().finalize_proposal(
+            data, object(), cast(AppScraper, object())
+        )
 
     convert.assert_not_called()
 
@@ -57,7 +62,7 @@ def test_generate_email_uses_customer_friendly_attachment_name(tmp_path, monkeyp
         "office.datetime", SimpleNamespace(now=lambda: datetime(2026, 1, 2))
     )
 
-    OfficeDocumentManager().generate_email(data, variables)
+    OfficeDocumentManager().generate_email(cast(DataManager, data), variables)
 
     mail.Attachments.Add.assert_called_once_with(
         str(final_proposal), 1, 0, "26_0102 Lovelace, Ada PV Proposal.pdf"
@@ -156,7 +161,9 @@ def test_finalize_combines_and_trims_cover_proposal_and_spec_sheets(
     convert = Mock(side_effect=convert_cover_letter)
     monkeypatch.setattr("office.docx2pdf.convert", convert)
 
-    result = OfficeDocumentManager().finalize_proposal(data, Variables(), scraper)
+    result = OfficeDocumentManager().finalize_proposal(
+        data, Variables(), cast(AppScraper, scraper)
+    )
 
     assert result == data.files.final_proposal
     pages = PdfReader(str(result)).pages
@@ -190,7 +197,7 @@ def test_finalize_combines_and_trims_cover_proposal_and_spec_sheets(
     assert Path(convert.call_args.args[1]).name == "cover_letter.converted.pdf"
 
     second_result = OfficeDocumentManager().finalize_proposal(
-        data, Variables(), scraper
+        data, Variables(), cast(AppScraper, scraper)
     )
     assert second_result != result
     assert second_result.parent.name != result.parent.name
@@ -206,16 +213,20 @@ def test_finalize_combines_and_trims_cover_proposal_and_spec_sheets(
     convert.reset_mock()
     proposal_pdf.write_bytes(b"not a PDF")
     with pytest.raises(ValueError, match="Invalid PDF"):
-        OfficeDocumentManager().finalize_proposal(data, Variables(), scraper)
+        OfficeDocumentManager().finalize_proposal(
+            data, Variables(), cast(AppScraper, scraper)
+        )
     convert.assert_not_called()
     _write_pdf(proposal_pdf, 2, 602)
 
     def fail_download(url, output_dir):
         raise RuntimeError("specification download failed")
 
-    scraper.download = fail_download
+    monkeypatch.setattr(scraper, "download", fail_download)
     with pytest.raises(RuntimeError, match="specification download failed"):
-        OfficeDocumentManager().finalize_proposal(data, Variables(), scraper)
+        OfficeDocumentManager().finalize_proposal(
+            data, Variables(), cast(AppScraper, scraper)
+        )
 
     assert all(
         path.read_bytes() == content for path, content in original_packages.items()
@@ -231,14 +242,18 @@ def test_finalize_combines_and_trims_cover_proposal_and_spec_sheets(
     (images / "site-photo.jpg").write_bytes(b"fixture image")
     data.files.images_folder = images
     settings = SimpleNamespace(files=SimpleNamespace(bids_folder=root / "bids"))
-    fileserver_package = OfficeDocumentManager().copy_to_fileserver(data, settings)
+    fileserver_package = OfficeDocumentManager().copy_to_fileserver(
+        data, cast(SettingsManager, settings)
+    )
     assert (fileserver_package / "proposal_package" / "manifest.json").is_file()
     assert (fileserver_package / "images").is_dir()
     assert (
         fileserver_package / "images" / "site-photo.jpg"
     ).read_bytes() == b"fixture image"
     with pytest.raises(FileExistsError):
-        OfficeDocumentManager().copy_to_fileserver(data, settings)
+        OfficeDocumentManager().copy_to_fileserver(
+            data, cast(SettingsManager, settings)
+        )
 
 
 def _write_pdf(path, pages, width):

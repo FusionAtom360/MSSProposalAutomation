@@ -1,5 +1,6 @@
 import sys
 from pathlib import Path
+from typing import cast
 
 from openpyxl import Workbook
 
@@ -23,7 +24,7 @@ def test_proposal_pdf_metrics_populate_and_clear_template_values(tmp_path):
     templates = TemplateManager(data)
 
     assert templates.resolve("{{PV_SIZE}}") == 11.31
-    assert templates.resolve("{{TOTAL_SIZE}}") == 15925.6
+    assert templates.resolve("{{TOTAL_SIZE}}") == "15,925.6"
     assert templates.resolve("{{USAGE_PERCENTAGE}}") == 116
     assert templates.provenance["{{TOTAL_SIZE}}"].source == "solargraf_pdf"
 
@@ -49,7 +50,7 @@ def test_pv_templates_do_not_access_battery_fields():
         def __getattribute__(self, name):
             raise AssertionError(f"PV template accessed battery field: {name}")
 
-    data.system.battery = BatteryAccessGuard()
+    data.system.battery = cast(DataManager.System.Battery, BatteryAccessGuard())
 
     templates = TemplateManager(data)
 
