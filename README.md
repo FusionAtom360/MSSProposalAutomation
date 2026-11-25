@@ -176,10 +176,8 @@ Choose **Finalize Proposal** only after reviewing the pricing workbook and cover
 - Downloads and trims configured specification sheets.
 - Creates the final combined PDF.
 - Opens the final PDF.
-- Creates an Outlook draft with the final PDF attached.
-- Copies the package to `BIDS_FOLDER`.
 
-Review the final PDF and Outlook draft manually before sending or delivering anything to a customer.
+After reviewing the final PDF, choose **Draft Customer Email** to create an Outlook draft with the final PDF attached. Review the draft manually before sending. Choose **Copy to Bids Folder** to copy the proposal package to `BIDS_FOLDER`.
 
 ## Project files
 

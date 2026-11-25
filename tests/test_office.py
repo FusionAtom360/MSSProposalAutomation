@@ -1,6 +1,7 @@
 import hashlib
 import json
 import sys
+from datetime import datetime
 from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
@@ -26,6 +27,42 @@ def test_finalize_validates_prerequisites_before_external_operations(monkeypatch
         OfficeDocumentManager().finalize_proposal(data, object(), object())
 
     convert.assert_not_called()
+
+
+def test_generate_email_uses_customer_friendly_attachment_name(tmp_path, monkeypatch):
+    email_template = tmp_path / "email.html"
+    email_template.write_text("<p>Proposal</p>", encoding="utf-8")
+    final_proposal = tmp_path / "proposal_packages" / "run-id" / "final_proposal.pdf"
+    data = SimpleNamespace(
+        update_from_pricing_spreadsheet=Mock(),
+        client=SimpleNamespace(first_name="Ada", last_name="Lovelace"),
+        system=SimpleNamespace(type=0),
+        files=SimpleNamespace(
+            email_template=email_template,
+            final_proposal=final_proposal,
+        ),
+    )
+    variables = Mock()
+    variables.resolve.side_effect = {
+        r"{{SYSTEM_TYPE}}": "PV",
+        r"{{CLIENT_EMAIL}}": "ada@example.com",
+    }.__getitem__
+    variables.get_all.return_value = {}
+    mail = Mock()
+    monkeypatch.setattr(
+        "office.win32.Dispatch",
+        lambda name: SimpleNamespace(CreateItem=lambda item_type: mail),
+    )
+    monkeypatch.setattr(
+        "office.datetime", SimpleNamespace(now=lambda: datetime(2026, 1, 2))
+    )
+
+    OfficeDocumentManager().generate_email(data, variables)
+
+    mail.Attachments.Add.assert_called_once_with(
+        str(final_proposal), 1, 0, "26_0102 Lovelace, Ada PV Proposal.pdf"
+    )
+    mail.Display.assert_called_once_with(False)
 
 
 def test_finalize_combines_and_trims_cover_proposal_and_spec_sheets(

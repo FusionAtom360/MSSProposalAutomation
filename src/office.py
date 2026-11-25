@@ -378,7 +378,19 @@ class OfficeDocumentManager:
             email_body = email_body.replace(str(placeholder), str(replacement))
 
         mail.HtmlBody = email_body
-        mail.Attachments.Add(str(data.files.final_proposal))
+        system_type = (
+            "PV"
+            if data.system.type == 0
+            else "ESS"
+            if data.system.type == 1
+            else "PV ESS"
+        )
+        attachment_name = (
+            f"{datetime.now().strftime('%y_%m%d')} "
+            f"{data.client.last_name}, {data.client.first_name} "
+            f"{system_type} Proposal.pdf"
+        )
+        mail.Attachments.Add(str(data.files.final_proposal), 1, 0, attachment_name)
         mail.Display(False)
 
     @staticmethod

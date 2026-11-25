@@ -89,7 +89,7 @@ def test_continue_local_project_uses_saved_data_without_rewriting_it(tmp_path):
     assert data_path.read_bytes() == original_data
 
 
-def test_finalize_reports_email_failure_and_still_publishes_to_fileserver(
+def test_finalize_creates_package_without_drafting_email_or_copying_to_bids(
     tmp_path, monkeypatch
 ):
     final_proposal = tmp_path / "final_proposal.pdf"
@@ -99,17 +99,19 @@ def test_finalize_reports_email_failure_and_still_publishes_to_fileserver(
 
     class Office:
         def finalize_proposal(self, data, templates, scraper):
+            calls.append("finalize")
             return final_proposal
 
         def generate_email(self, data, templates):
-            raise RuntimeError("Outlook is unavailable")
+            calls.append("email")
 
         def copy_to_fileserver(self, data, settings):
-            calls.append("fileserver")
+            calls.append("bids")
             return published_path
 
     app = SimpleNamespace(
         _require_project=lambda: None,
+        _run_post_generation_action=App._run_post_generation_action,
         office=Office(),
         data=SimpleNamespace(
             files=SimpleNamespace(
@@ -126,6 +128,46 @@ def test_finalize_reports_email_failure_and_still_publishes_to_fileserver(
 
     result = App.finalize_proposal(app)
 
-    assert calls == ["fileserver"]
-    assert "Email draft: FAILED (Outlook is unavailable)" in result
-    assert f"File-server publication: complete ({published_path})" in result
+    assert calls == ["finalize"]
+    assert f"Final proposal package created at {final_proposal}." in result
+    assert f"Manifest: {manifest}." in result
+    assert "Open proposal: complete" in result
+
+
+def test_draft_customer_email_runs_as_a_separate_action():
+    calls = []
+    app = SimpleNamespace(
+        _require_project=lambda: None,
+        _run_post_generation_action=App._run_post_generation_action,
+        office=SimpleNamespace(
+            generate_email=lambda data, templates: calls.append("email")
+        ),
+        data=object(),
+        templates=object(),
+    )
+
+    result = App.draft_customer_email(app)
+
+    assert calls == ["email"]
+    assert result == "Email draft: complete"
+
+
+def test_copy_to_bids_folder_runs_as_a_separate_action():
+    published_path = Path("published")
+    calls = []
+    app = SimpleNamespace(
+        _require_project=lambda: None,
+        _run_post_generation_action=App._run_post_generation_action,
+        office=SimpleNamespace(
+            copy_to_fileserver=lambda data, settings: (
+                calls.append("bids") or published_path
+            )
+        ),
+        data=object(),
+        settings=object(),
+    )
+
+    result = App.copy_to_bids_folder(app)
+
+    assert calls == ["bids"]
+    assert result == f"Bids folder copy: complete ({published_path})"

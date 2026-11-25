@@ -33,7 +33,7 @@ class App(ctk.CTk):
         """Initialize application services, state, and the window layout."""
         super().__init__()
         self.title("MSS Proposal Automation")
-        self.geometry("1080x720")
+        self.geometry("1080x780")
         self.minsize(960, 640)
 
         self.settings = SettingsManager()
@@ -155,6 +155,8 @@ class App(ctk.CTk):
                     ("Download Proposal Document", self.download_proposal_document),
                     ("Generate Cover Letter", self.generate_cover_letter),
                     ("Finalize Proposal", self.finalize_proposal),
+                    ("Draft Customer Email", self.draft_customer_email),
+                    ("Copy to Bids Folder", self.copy_to_bids_folder),
                 ],
             ),
         ]
@@ -703,41 +705,48 @@ class App(ctk.CTk):
             f"Generated and opened cover letter at {self.data.files.cover_letter_docx}."
         )
 
+    @staticmethod
+    def _run_post_generation_action(label, action):
+        """Run a post-generation action and report its result."""
+        try:
+            result = action()
+        except Exception as exc:
+            logger.exception("Post-generation action failed: %s", label)
+            return f"{label}: FAILED ({exc})"
+        if result is not None:
+            return f"{label}: complete ({result})"
+        return f"{label}: complete"
+
     def finalize_proposal(self):
-        """Create the final proposal package and attempt post-generation actions."""
+        """Create the final proposal package and open the resulting PDF."""
         self._require_project()
         proposal_path = self.office.finalize_proposal(
             self.data, self.templates, self.scraper
         )
 
-        def run_post_generation_action(label, action):
-            """Run a follow-up action and return a status string for its result."""
-            try:
-                result = action()
-            except Exception as exc:
-                logger.exception("Post-generation action failed: %s", label)
-                return f"{label}: FAILED ({exc})"
-            if result is not None:
-                return f"{label}: complete ({result})"
-            return f"{label}: complete"
-
-        statuses = [
-            run_post_generation_action(
-                "Open proposal", lambda: os.startfile(proposal_path)
-            ),
-            run_post_generation_action(
-                "Email draft",
-                lambda: self.office.generate_email(self.data, self.templates),
-            ),
-            run_post_generation_action(
-                "File-server publication",
-                lambda: self.office.copy_to_fileserver(self.data, self.settings),
-            ),
-        ]
+        open_status = self._run_post_generation_action(
+            "Open proposal", lambda: os.startfile(proposal_path)
+        )
         return (
             f"Final proposal package created at {proposal_path}.\n"
             f"Manifest: {self.data.files.proposal_manifest}.\n"
-            + "\n".join(statuses)
+            + open_status
+        )
+
+    def draft_customer_email(self):
+        """Create an Outlook draft with the finalized proposal attached."""
+        self._require_project()
+        return self._run_post_generation_action(
+            "Email draft",
+            lambda: self.office.generate_email(self.data, self.templates),
+        )
+
+    def copy_to_bids_folder(self):
+        """Copy the finalized proposal package to the configured bids folder."""
+        self._require_project()
+        return self._run_post_generation_action(
+            "Bids folder copy",
+            lambda: self.office.copy_to_fileserver(self.data, self.settings),
         )
 
 if __name__ == "__main__":
