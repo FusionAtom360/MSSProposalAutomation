@@ -1,6 +1,7 @@
 import datetime
 
 from data import DataManager
+from field_schema import FieldProvenance, ValidationIssue, ValidationReport
 from openpyxl import load_workbook
 from datetime import datetime
 
@@ -8,9 +9,16 @@ class TemplateManager:
     def __init__(self, data: DataManager):
         self.templates = {}
         self.aliases = {}
+        self.provenance = {}
+        self.unresolved_placeholders = set()
+        self.validation_report = ValidationReport()
         self.update(data)
 
     def update(self, data: DataManager):
+        self.unresolved_placeholders = set()
+        self.validation_report = ValidationReport(
+            enforcement=data.field_schema.enforcement
+        )
         self._update_from_settings_spreadsheet(data)
         self.templates[r"{{JOB_NAME}}"] = data.project.name.upper()
         self.templates[r"{{CLIENT_NAME}}"] = data.client.name
@@ -89,21 +97,114 @@ class TemplateManager:
         self.templates[r"{{LOAN_TERM}}"] = data.pricing.loan_term
         self.templates[r"{{LOAN_INTEREST_RATE}}"] = f"{data.pricing.loan_interest_rate*100:.2f}"
         self.templates[r"{{LOAN_MONTHLY_PAYMENT}}"] = f"${int(data.pricing.loan_monthly_payment):,}"
+
+        data_fields = {
+            "{{JOB_NAME}}": "project.name",
+            "{{CLIENT_NAME}}": "client.name",
+            "{{CLIENT_FIRST_NAME}}": "client.first_name",
+            "{{CLIENT_LAST_NAME}}": "client.last_name",
+            "{{CLIENT_PHONE}}": "client.phone",
+            "{{CLIENT_EMAIL}}": "client.email",
+            "{{CLIENT_ADDRESS_1}}": "client.address.street",
+            "{{CLIENT_ADDRESS_2}}": "client.address.city",
+            "{{UTILITY_NAME}}": "utility.name",
+            "{{ANNUAL_CONSUMPTION}}": "utility.annual_consumption",
+            "{{PANEL_MANUFACTURER}}": "system.panel.manufacturer",
+            "{{PANEL_MODEL}}": "system.panel.model",
+            "{{PANEL_TYPE}}": "system.panel.type",
+            "{{PANEL_SIZE}}": "system.panel.size",
+            "{{PANEL_PTC}}": "system.panel.ptc",
+            "{{PANEL_WARRANTY}}": "system.panel.warranty",
+            "{{PANEL_COUNT}}": "system.panel.count",
+            "{{INVERTER_MANUFACTURER}}": "system.inverter.manufacturer",
+            "{{INVERTER_MODEL}}": "system.inverter.model",
+            "{{INVERTER_WARRANTY}}": "system.inverter.warranty",
+            "{{INVERTER_COUNT}}": "system.inverter.count",
+            "{{BATTERY_MANUFACTURER}}": "system.battery.manufacturer",
+            "{{BATTERY_MODEL}}": "system.battery.model",
+            "{{BATTERY_CAPACITY}}": "system.battery.capacity",
+            "{{BATTERY_WARRANTY}}": "system.battery.warranty",
+            "{{BATTERY_COUNT}}": "system.battery.count",
+            "{{SYSTEM_TYPE}}": "system.type",
+            "{{PV_SIZE}}": "system.pv_size",
+            "{{ESS_SIZE}}": "system.ess_size",
+            "{{PV_COST}}": "pricing.pv_cost",
+            "{{ESS_COST}}": "pricing.ess_cost",
+            "{{TOTAL_COST}}": "pricing.total_cost",
+            "{{LOAN_TERM}}": "pricing.loan_term",
+            "{{LOAN_INTEREST_RATE}}": "pricing.loan_interest_rate",
+            "{{LOAN_MONTHLY_PAYMENT}}": "pricing.loan_monthly_payment",
+        }
+        for placeholder, field_name in data_fields.items():
+            field_provenance = data.field_provenance.get(field_name)
+            if field_provenance is not None:
+                self.provenance[placeholder] = field_provenance
+
+        alias_fields = [
+            ("utility.name", data.utility.name),
+            ("system.panel.manufacturer", data.system.panel.manufacturer),
+            ("system.panel.model", data.system.panel.model),
+            ("system.inverter.manufacturer", data.system.inverter.manufacturer),
+            ("system.inverter.model", data.system.inverter.model),
+        ]
+        if data.system.type != 0:
+            alias_fields.extend(
+                (
+                    ("system.battery.manufacturer", data.system.battery.manufacturer),
+                    ("system.battery.model", data.system.battery.model),
+                )
+            )
+
+        for source_field, alias in alias_fields:
+            alias_provenance = self.provenance.get(f"alias:{alias}")
+            if alias_provenance is not None:
+                for placeholder, field_name in data_fields.items():
+                    if field_name == source_field:
+                        self.provenance[placeholder] = FieldProvenance(
+                            source="template",
+                            source_path=alias_provenance.source_path,
+                            transformation="settings alias applied",
+                            derived_from=(source_field,),
+                        )
     
     def _update_from_settings_spreadsheet(self, data: DataManager):
         if data.files.settings.is_file():
             workbook = load_workbook(data.files.settings, data_only=True, read_only=True)
             sheet = workbook["Aliases"]
-            for row in sheet.iter_rows(min_row=2, values_only=True):
+            for row_number, row in enumerate(
+                sheet.iter_rows(min_row=2, values_only=True), start=2
+            ):
                 placeholder, value = row[0], row[1]
                 if placeholder and value is not None:
                     self.aliases[str(placeholder)] = str(value)
+                    self.provenance[f"alias:{placeholder}"] = FieldProvenance(
+                        source="template",
+                        source_path=(
+                            str(data.files.settings),
+                            "Aliases",
+                            row_number,
+                            "B",
+                        ),
+                        transformation="settings alias",
+                    )
     
             sheet = workbook["Variables"]
-            for row in sheet.iter_rows(min_row=2, values_only=True):
+            for row_number, row in enumerate(
+                sheet.iter_rows(min_row=2, values_only=True), start=2
+            ):
                 placeholder, value = row[0], row[1]
                 if placeholder and value is not None:
                     self.templates[str(placeholder)] = str(value)
+                    self.provenance[str(placeholder)] = FieldProvenance(
+                        source="template",
+                        source_path=(
+                            str(data.files.settings),
+                            "Variables",
+                            row_number,
+                            "B",
+                        ),
+                        transformation="settings variable",
+                    )
             workbook.close()
     
 
@@ -111,6 +212,24 @@ class TemplateManager:
         return self.templates
 
     def resolve(self, template_name):
-        if self.templates.get(template_name, None) is None:
+        value = self.templates.get(template_name, None)
+        if value is None:
+            if template_name not in self.unresolved_placeholders:
+                self.unresolved_placeholders.add(template_name)
+                self.validation_report.warnings.append(
+                    ValidationIssue(
+                        severity="warning",
+                        field=template_name,
+                        code="unresolved_placeholder",
+                        message="Template value is not configured",
+                    )
+                )
             return template_name
-        return self.templates.get(template_name, template_name)
+        if template_name in self.unresolved_placeholders:
+            self.unresolved_placeholders.remove(template_name)
+            self.validation_report.warnings = [
+                issue
+                for issue in self.validation_report.warnings
+                if issue.field != template_name
+            ]
+        return value

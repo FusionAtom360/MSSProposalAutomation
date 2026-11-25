@@ -22,7 +22,7 @@ The main application is in [`src/`](src/). The browser extension used for token 
 ## Requirements
 
 - Windows
-- Python compatible with the pinned dependencies in [`src/requirements.txt`](src/requirements.txt)
+- Python 3.13 or newer, compatible with the pinned dependencies in [`src/requirements.txt`](src/requirements.txt)
 - Microsoft Excel
 - Microsoft Word, required by `docx2pdf`
 - Microsoft Outlook desktop, required to create the email draft
@@ -36,15 +36,28 @@ The application is Windows-specific because it uses `os.startfile`, Outlook COM 
 
 ### Option A: use the installer
 
-Run `install.py` from the folder where you want the application installed:
+Clone the repository and run its installer to download and verify the latest
+stable release:
 
 ```powershell
+git clone https://github.com/FusionAtom360/MSSProposalAutomation.git
+Set-Location .\MSSProposalAutomation
 python install.py
 ```
 
-The installer clones the repository, creates `.venv`, installs dependencies, and creates `src/.env`.
+To update an existing installation from a separate checkout, pass its
+directory:
 
-Review the generated `.env` before starting the application. The installer is a convenience bootstrapper; if it fails partway through, use the manual setup below or repair the installation before retrying.
+```powershell
+python .\install.py --install-dir C:\Path\To\MSSProposalAutomation
+```
+
+The installer creates `.venv` if needed, verifies the signed stable release
+before replacing application files, installs dependencies, and creates
+`src/.env` if it does not exist. It preserves an existing `src/.env` and
+`src/templates`; edits, additions, and removals in the templates folder remain
+user-controlled across updates. It also preserves `src/field_schema.json`,
+which controls configurable field mappings and validation.
 
 ### Option B: manual setup
 
@@ -53,6 +66,7 @@ From the repository root:
 ```powershell
 python -m venv .venv
 .\.venv\Scripts\python.exe -m pip install -r .\src\requirements.txt
+.\.venv\Scripts\python.exe -m pip install -r .\src\requirements-release.txt
 Copy-Item .\src\.env.example .\src\.env
 ```
 
@@ -110,11 +124,16 @@ The extension sends the token to a local listener at `http://127.0.0.1:8765/toke
 
 ### 1. Start the application
 
-Launch from the repository root so relative paths resolve correctly. Wait for the update window to finish before using the main UI.
+Launch from the application root so relative paths resolve correctly. At
+startup, the updater checks signed GitHub releases and asks before installing a
+newer version. It verifies the artifact checksum and Sigstore identity before
+staging files; a failed validation leaves the installed source unchanged.
 
 ### 2. Load a project
 
-Choose **Load Project from Solargraf**. Select the project from the list returned by SolarGraf. Confirm the customer, project ID, utility, system type, and size in the summary panel.
+Choose **Load Project from Solargraf** to select a project from SolarGraf. To resume a project already saved on this computer, choose **Continue Local Project** and select it from the local project list. Continuing locally uses the saved `projects\<project-id>\data.json` without fetching or rewriting it from SolarGraf.
+
+Confirm the customer, project ID, utility, system type, and size in the summary panel.
 
 Use **Update Project from Solargraf** if the SolarGraf project changes before documents are generated.
 
@@ -208,8 +227,29 @@ Confirm that `BIDS_FOLDER` points to a reachable, writable folder. Check for an 
 - There is no multi-user access control or shared job queue.
 - Output generation is operator-assisted; always review customer-facing documents.
 - Templates and spreadsheet coordinates are part of the application contract.
-- The automatic updater currently retrieves application files from the repository; update behavior should be treated as trusted internal infrastructure.
+- Signed update verification requires the Sigstore CLI installed in `.venv`.
+- Older installations made before signed releases were introduced must be
+  migrated once with the signed-release installer before the startup updater
+  can verify updates. Run the installer from a current repository checkout and
+  pass the old installation path with `--install-dir`; it preserves `src/.env`
+  and `src/templates`.
 - The application does not provide a database, audit dashboard, or formal rollback for generated documents.
+
+## Signed releases and updates
+
+The GitHub Actions workflow at
+[`.github/workflows/release.yml`](.github/workflows/release.yml) runs tests
+before publishing. A push to `main` publishes a commit-specific prerelease;
+push a `vX.Y.Z` tag to publish a stable release. Before creating a stable tag,
+update `src/details.json` to the same `X.Y.Z` version and include that change in
+the tagged commit.
+
+Each release contains a versioned source ZIP, a SHA-256 manifest, and a
+Sigstore bundle. Release metadata pins the exact commit and triggering ref.
+Updates are prompted, signature-verified against this repository's GitHub
+Actions workflow, checked before extraction, and installed from a staging
+directory with rollback. `src/.env` and local logs are carried forward and are
+not included in release packages.
 
 ## Developer documentation
 

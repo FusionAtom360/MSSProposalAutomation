@@ -3,12 +3,8 @@ from urllib.parse import urlparse
 import os
 from pathlib import Path
 from dotenv import load_dotenv, set_key
-import json
-import dotenv
 
 from settings import SettingsManager
-from token_receiver import TokenReceiver
-from http.server import HTTPServer
 import threading
 
 from playwright.sync_api import sync_playwright
@@ -16,6 +12,7 @@ import webbrowser
 
 from data import DataManager
 from http_client import AuthenticatedHttpClient
+from token_receiver import TokenHTTPServer
 
 load_dotenv(Path(__file__).with_name(".env"))
 
@@ -211,34 +208,29 @@ class Scraper:
         if self.http.get("https://api.solargraf.com/companies/27792/projects", headers={"authorization": f"Bearer {os.getenv("REQUEST_AUTH_KEY")}"}, timeout=30).ok:
             settings.set_auth_key(str(os.getenv("REQUEST_AUTH_KEY")))
             return
-        server = HTTPServer(
-            ("127.0.0.1", 8765),
-            TokenReceiver
-        )
+        server = TokenHTTPServer(("127.0.0.1", 8765))
         thread = threading.Thread(
             target=server.serve_forever,
             daemon=True
         )
         thread.start()
         print("Waiting for Solargraf authentication...")
-        webbrowser.open("https://app.solargraf.com")
-        timeout = 300
-        for _ in range(timeout):
-            if TokenReceiver.token:
-                settings.set_auth_key(TokenReceiver.token)
-                set_key(
-                    str(Path(__file__).with_name(".env")),
-                    "REQUEST_AUTH_KEY",
-                    TokenReceiver.token,
-                )
-                dotenv.set_key("src/.env", "REQUEST_AUTH_KEY", TokenReceiver.token)
-                server.shutdown()
-                return
-            import time
-            time.sleep(1)
+        try:
+            webbrowser.open("https://app.solargraf.com")
+            if not server.session.received.wait(300):
+                raise TimeoutError("Timed out waiting for Solargraf token.")
 
-        server.shutdown()
+            token = server.session.token
+            if token is None:
+                raise RuntimeError("Token receiver signaled completion without a token.")
 
-        raise TimeoutError(
-            "Timed out waiting for Solargraf token."
-        ) 
+            settings.set_auth_key(token)
+            set_key(
+                str(Path(__file__).with_name(".env")),
+                "REQUEST_AUTH_KEY",
+                token,
+            )
+        finally:
+            server.shutdown()
+            server.server_close()
+            thread.join()

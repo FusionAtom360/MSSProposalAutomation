@@ -129,6 +129,7 @@ class App(ctk.CTk):
                 [
                     ("Create Project in Solargraf", self.create_project_in_solargraf),
                     ("Load Project from Solargraf", self.load_project_from_solargraf),
+                    ("Continue Local Project", self.continue_local_project),
                 ],
             ),
             (
@@ -172,8 +173,9 @@ class App(ctk.CTk):
                 self._action_buttons[command_name] = {
                     "button": button,
                     "text": label,
+                    "available_without_project": section_title == "Setup",
                 }
-                if len(self._action_order) > 2:
+                if section_title != "Setup":
                     button.configure(state="disabled")
                 row += 1
 
@@ -295,7 +297,7 @@ class App(ctk.CTk):
         self._busy = busy
         self._set_state_chip("WORKING" if busy else ("READY" if self.data.project.id else "IDLE"), busy=busy)
 
-        for index, action_name in enumerate(self._action_order):
+        for action_name in self._action_order:
             button_data = self._action_buttons[action_name]
             button = button_data["button"]
 
@@ -303,11 +305,13 @@ class App(ctk.CTk):
                 self._set_button_state(action_name, button, "disabled")
                 continue
 
-            if index < 2:
-                self._set_button_state(action_name, button, "normal")
-            else:
-                target_state = "normal" if self.data.project.id else "disabled"
-                self._set_button_state(action_name, button, target_state)
+            button_data = self._action_buttons[action_name]
+            target_state = (
+                "normal"
+                if self.data.project.id or button_data["available_without_project"]
+                else "disabled"
+            )
+            self._set_button_state(action_name, button, target_state)
 
     def _set_button_state(self, action_name, button, state):
         if self._last_button_states.get(action_name) == state:
@@ -351,8 +355,15 @@ class App(ctk.CTk):
         self._completed_actions.add(task_name)
         self._update_button_status(task_name)
 
-        if task_name in {"load_project_from_solargraf", "update_project_data"}:
-            self._mark_project_loaded()
+        if task_name in {
+            "load_project_from_solargraf",
+            "continue_local_project",
+            "update_project_data",
+        }:
+            if self.data.project.id:
+                self._mark_project_loaded()
+            else:
+                self._set_status(f"Done: {task_name.replace('_', ' ')}")
             if result:
                 self._log(result)
             return
@@ -443,15 +454,34 @@ class App(ctk.CTk):
         self.project_title.configure(text=customer_name)
         self.project_hint.configure(text=address)
         self._update_summary()
+        self._log_validation_report()
         self._set_status(f"Loaded: {self.data.project.id}")
         self._log(f"Loaded {customer_name} ({self.data.project.id}).")
 
-    def _select_project_dialog(self, projects: list[dict]) -> dict:
+    def _log_validation_report(self):
+        report = self.data.validation_report
+        if report.errors or report.warnings:
+            self._log(self.data.format_validation_report())
+        template_report = self.templates.validation_report
+        if template_report.errors or template_report.warnings:
+            self._log(
+                f"Template validation "
+                f"(enforcement={template_report.enforcement}):"
+            )
+            for issue in template_report.errors + template_report.warnings:
+                self._log(f"{issue.severity.upper()} {issue.field}: {issue.message}")
+
+    def _select_project_dialog(
+        self,
+        projects: list[dict],
+        title: str = "Select a project to load",
+        confirm_text: str = "Load Project",
+    ) -> dict:
         if not projects:
             return {}
 
         dialog = ctk.CTkToplevel(self)
-        dialog.title("Select SolarGraf Project")
+        dialog.title(title)
         dialog.geometry("550x450")
         dialog.grab_set()
         dialog.resizable(False, False)
@@ -459,12 +489,12 @@ class App(ctk.CTk):
         selected = {"project": {}}
         dialog.grid_columnconfigure(0, weight=1)
         dialog.grid_rowconfigure(1, weight=1)
-        title = ctk.CTkLabel(
+        title_label = ctk.CTkLabel(
             dialog,
-            text="Select a project to load",
+            text=title,
             font=ctk.CTkFont(size=18, weight="bold"),
         )
-        title.grid(row=0, column=0, padx=20, pady=(20, 10))
+        title_label.grid(row=0, column=0, padx=20, pady=(20, 10))
         project_names = []
         for project in projects:
             name = project.get("name") or "Unknown Customer"
@@ -511,7 +541,7 @@ class App(ctk.CTk):
 
         ctk.CTkButton(
             button_frame,
-            text="Load Project",
+            text=confirm_text,
             command=confirm,
         ).grid(row=0, column=1, padx=5, sticky="ew")
 
@@ -569,6 +599,40 @@ class App(ctk.CTk):
             raise RuntimeError("SolarGraf payload did not include a project ID.")
         return f"Loaded project {self.data.project.id}."
 
+    def continue_local_project(self):
+        projects = []
+        project_files = self.settings.files.projects_folder.glob("*/data.json")
+        for data_path in sorted(project_files):
+            with data_path.open(encoding="utf-8") as project_file:
+                payload = json.load(project_file)
+            if not isinstance(payload, dict):
+                raise ValueError(f"Local project data must be an object: {data_path}")
+
+            projects.append(
+                {
+                    "id": payload.get("id") or data_path.parent.name,
+                    "name": payload.get("client_name") or "Unknown Customer",
+                    "payload": payload,
+                }
+            )
+
+        if not projects:
+            raise RuntimeError("No local projects found.")
+
+        selected_project = self._select_project_dialog(
+            projects,
+            title="Select a local project",
+            confirm_text="Continue Project",
+        )
+        if not selected_project:
+            return "Local project selection cancelled."
+
+        self.data.load_json(selected_project["payload"], save_to_file=False)
+        self.templates.update(self.data)
+        if self.data.project.id == 0:
+            raise RuntimeError("Local project data did not include a project ID.")
+        return f"Continued project {self.data.project.id}."
+
     def open_images_folder(self):
         self._require_project()
         os.startfile(self.data.files.images_folder)
@@ -609,11 +673,38 @@ class App(ctk.CTk):
 
     def finalize_proposal(self):
         self._require_project()
-        self.office.finalize_proposal(self.data, self.templates, self.scraper)
-        os.startfile(self.data.files.final_proposal)
-        self.office.generate_email(self.data, self.templates)
-        self.office.copy_to_fileserver(self.data, self.settings)
-        return f"Final proposal document created at {self.data.files.final_proposal}.\nDrafted email to customer with proposal attached.\nCopied project {self.data.project.id} to {self.settings.files.bids_folder}."
+        proposal_path = self.office.finalize_proposal(
+            self.data, self.templates, self.scraper
+        )
+
+        def run_post_generation_action(label, action):
+            try:
+                result = action()
+            except Exception as exc:
+                logger.exception("Post-generation action failed: %s", label)
+                return f"{label}: FAILED ({exc})"
+            if result is not None:
+                return f"{label}: complete ({result})"
+            return f"{label}: complete"
+
+        statuses = [
+            run_post_generation_action(
+                "Open proposal", lambda: os.startfile(proposal_path)
+            ),
+            run_post_generation_action(
+                "Email draft",
+                lambda: self.office.generate_email(self.data, self.templates),
+            ),
+            run_post_generation_action(
+                "File-server publication",
+                lambda: self.office.copy_to_fileserver(self.data, self.settings),
+            ),
+        ]
+        return (
+            f"Final proposal package created at {proposal_path}.\n"
+            f"Manifest: {self.data.files.proposal_manifest}.\n"
+            + "\n".join(statuses)
+        )
 
 if __name__ == "__main__":
     from dotenv import load_dotenv

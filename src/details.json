@@ -1,6 +1,9 @@
 {
-    "version": "0.4.0",
+    "version": "0.5.0",
     "changelog": [
+        "Added signed, commit-pinned releases and verified automatic updates",
+        "Improved token handling, data validation, proposal generation, and templates",
+        "Improved installer workflows, logging, and preservation of local files",
         "Fixes issue with API failures relating to auth tokens",
         "Added cover letter for PV only",
         "Improved codebase quality and maintainability",
