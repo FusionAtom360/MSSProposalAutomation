@@ -9,6 +9,7 @@ from pathlib import Path
 import customtkinter as ctk
 from tkinter import messagebox
 
+from app_logging import report_tk_callback_exception
 from scraper import Scraper
 from office import OfficeDocumentManager
 
@@ -36,7 +37,8 @@ class App(ctk.CTk):
 
         self.scraper = Scraper()
         self.office = OfficeDocumentManager()
-        with open("./src/details.json", "r", encoding="utf-8") as f:
+        details_path = Path(__file__).resolve().with_name("details.json")
+        with details_path.open("r", encoding="utf-8") as f:
             self.version = json.load(f).get("version", "0.0.0")
 
         self._busy = False
@@ -392,17 +394,7 @@ class App(ctk.CTk):
         messagebox.showerror("MSS Proposal Automation", detail)
 
     def report_callback_exception(self, exc, val, tb):
-        logger.exception("Unhandled Tk callback exception", exc_info=(exc, val, tb))
-        self._set_busy(False)
-        detail = f"{exc.__name__}: {val}"
-        self._set_status("Failed: ui callback")
-        self._log(
-            "Unhandled UI exception\n"
-            + detail
-            + "\n"
-            + "".join(traceback.format_exception(exc, val, tb))
-        )
-        messagebox.showerror("MSS Proposal Automation", detail)
+        report_tk_callback_exception(exc, val, tb, parent=self)
 
     def _require_project(self):
         if self.data == {} or self.data.project.id == 0:
@@ -708,14 +700,19 @@ class App(ctk.CTk):
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
-    load_dotenv()
+    load_dotenv(Path(__file__).resolve().with_name(".env"))
     
-    from app_logging import configure_logging, install_exception_hooks
+    from app_logging import (
+        configure_logging,
+        install_exception_hooks,
+        set_crash_alert_parent,
+    )
     logger = configure_logging()
     install_exception_hooks(logger)
 
     try:    
         app = App()
+        set_crash_alert_parent(app)
         app.mainloop()
     except Exception:
         logging.getLogger("mss_proposal_automation").exception("Application startup failed")

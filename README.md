@@ -72,13 +72,19 @@ Copy-Item .\src\.env.example .\src\.env
 
 If `.env.example` is not present in the installed copy, create `src/.env` manually using the variables below.
 
-Start the application from the repository root:
+Start the application from the installation root:
 
 ```powershell
 .\.venv\Scripts\python.exe .\src\main.py
 ```
 
-The included [`run.ps1`](run.ps1) is equivalent to the last command, but assumes it is executed from the repository root.
+The included [`run.ps1`](run.ps1) locates the installation from its own path
+and can be invoked from any current working directory. Application data and
+template paths are also resolved from the installation root.
+
+Unexpected application errors are written to `src/logs/app.log`. The app shows
+a crash alert with an **Email support** button that opens a message to
+`joe.yakligian@gmail.com` containing the complete log from the current run.
 
 ## Configuration
 
@@ -199,7 +205,9 @@ The application also writes logs to `src/logs/app.log`.
 
 ### The application cannot find templates or details
 
-Start it from the repository root. Avoid launching `src/main.py` with an unrelated working directory. Confirm that `src/templates/` and `src/details.json` exist.
+Confirm that `src/templates/` and `src/details.json` exist under the
+installation root, and launch that installation's `run.ps1` or `src/main.py`.
+The process current working directory does not determine application paths.
 
 ### SolarGraf authentication times out
 

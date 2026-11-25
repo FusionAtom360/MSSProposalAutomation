@@ -15,6 +15,7 @@ import customtkinter as ctk
 from packaging.version import Version
 from tkinter import messagebox
 
+from app_logging import report_tk_callback_exception, set_crash_alert_parent
 from release_artifacts import (
     REPOSITORY,
     create_backup_path,
@@ -68,6 +69,8 @@ class UpdateManager:
             version = version_from_release(release)
             if release.get("prerelease") is not version.is_prerelease:
                 raise ValueError("GitHub release channel does not match its version")
+            if version.is_prerelease:
+                continue
             if version > self.current:
                 release_assets(release)
                 candidates.append((release, version))
@@ -169,6 +172,8 @@ class UpdateManager:
         ctk.set_default_color_theme("blue")
 
         self.window = ctk.CTk()
+        self.window.report_callback_exception = self.report_callback_exception
+        set_crash_alert_parent(self.window)
         self.window.title("MSS Proposal Automation")
         self.window.geometry("350x160")
         self.window.resizable(False, False)
@@ -187,6 +192,9 @@ class UpdateManager:
         self.progress.set(0)
         self.window.after(100, self.start_check)
         self.window.mainloop()
+
+    def report_callback_exception(self, exc, val, tb):
+        report_tk_callback_exception(exc, val, tb, parent=self.window)
 
     def start_check(self):
         self.progress.configure(mode="indeterminate")
