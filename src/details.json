@@ -1,6 +1,9 @@
 {
-    "version": "0.5.3",
+    "version": "0.5.4",
     "changelog": [
-        ""
+        "Type checking, improved tests",
+        "Split out `Finalize Proposal` into multiple functions",
+        "Implemented functionality for {{TOTAL_SIZE}} template",
+        "Enhanced documentation"
     ]
 }
