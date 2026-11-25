@@ -1,3 +1,5 @@
+"""Desktop application UI and project/document workflow actions."""
+
 import os
 import logging
 import threading
@@ -25,7 +27,10 @@ logger = logging.getLogger("mss_proposal_automation.ui")
 
 
 class App(ctk.CTk):
+    """Main window coordinating project state and proposal workflow actions."""
+
     def __init__(self):
+        """Initialize application services, state, and the window layout."""
         super().__init__()
         self.title("MSS Proposal Automation")
         self.geometry("1080x720")
@@ -52,6 +57,7 @@ class App(ctk.CTk):
         self._build_layout()
 
     def _build_layout(self):
+        """Create the main window, workflow controls, summary, and activity log."""
         self.grid_columnconfigure(0, weight=1)
         self.grid_rowconfigure(0, weight=1)
 
@@ -257,12 +263,14 @@ class App(ctk.CTk):
         self.log_box.configure(state="disabled")
 
     def _set_status(self, message):
+        """Log a status message only when it differs from the previous one."""
         if message == self._last_status_message:
             return
         self._last_status_message = message
         self._log(message)
 
     def _set_state_chip(self, state_text, busy=False):
+        """Update the status chip text and color when its appearance changes."""
         style = {
             "text": state_text,
             "fg_color": ("#DBE4F0", "#2A3442"),
@@ -289,6 +297,7 @@ class App(ctk.CTk):
         self.state_chip.configure(**style)
 
     def _log(self, message):
+        """Write a message to the activity widget and application logger."""
         logger.info(message)
         self.log_box.configure(state="normal")
         self.log_box.insert("end", f"{message}\n")
@@ -296,6 +305,7 @@ class App(ctk.CTk):
         self.log_box.configure(state="disabled")
 
     def _set_busy(self, busy):
+        """Set busy state and enable or disable workflow buttons accordingly."""
         self._busy = busy
         self._set_state_chip("WORKING" if busy else ("READY" if self.data.project.id else "IDLE"), busy=busy)
 
@@ -316,16 +326,19 @@ class App(ctk.CTk):
             self._set_button_state(action_name, button, target_state)
 
     def _set_button_state(self, action_name, button, state):
+        """Apply a button state only when it has changed."""
         if self._last_button_states.get(action_name) == state:
             return
         self._last_button_states[action_name] = state
         button.configure(state=state)
 
     def _run_task(self, task):
+        """Run a UI action in a worker thread and marshal its result to Tk."""
         if self._busy:
             return
 
         def worker():
+            """Execute task and schedule its success or error handler on the UI."""
             try:
                 result = task()
             except (  # pyright: ignore[reportGeneralException]
@@ -352,6 +365,7 @@ class App(ctk.CTk):
         threading.Thread(target=worker, daemon=True).start()
 
     def _handle_task_result(self, task_name, result):
+        """Restore the UI after success and update project or action status."""
         self._set_busy(False)
 
         self._completed_actions.add(task_name)
@@ -377,6 +391,7 @@ class App(ctk.CTk):
             self._set_status(f"Done: {task_name.replace('_', ' ')}")
 
     def _update_button_status(self, task_name):
+        """Mark the completed workflow action's button as successful."""
         button_data = self._action_buttons.get(task_name)
 
         if not button_data:
@@ -387,6 +402,7 @@ class App(ctk.CTk):
         )
 
     def _handle_task_error(self, task_name, exc, traceback_text=""):
+        """Restore the UI and show details for a failed workflow action."""
         self._set_busy(False)
         detail = f"{task_name.replace('_', ' ').capitalize()} failed: {exc}"
         self._set_status(f"Failed: {task_name.replace('_', ' ')}")
@@ -394,13 +410,16 @@ class App(ctk.CTk):
         messagebox.showerror("MSS Proposal Automation", detail)
 
     def report_callback_exception(self, exc, val, tb):
+        """Send an uncaught Tk callback exception to the crash reporter."""
         report_tk_callback_exception(exc, val, tb, parent=self)
 
     def _require_project(self):
+        """Raise an error if no project is currently loaded."""
         if self.data == {} or self.data.project.id == 0:
             raise RuntimeError("Load a project from SolarGraf first.")
 
     def _find_value(self, payload, target_keys):
+        """Recursively find the first non-empty value matching a target key."""
         if isinstance(payload, dict):
             for key, value in payload.items():
                 if key in target_keys and value not in (None, ""):
@@ -416,6 +435,7 @@ class App(ctk.CTk):
         return None
 
     def _update_summary(self):
+        """Refresh project, customer, utility, and system summary labels."""
         self.summary_labels["project_id"].configure(
             text=str(self.data.project.id or "--")
         )
@@ -441,6 +461,7 @@ class App(ctk.CTk):
         self.summary_labels["system_type"].configure(text=system_text)
 
     def _mark_project_loaded(self):
+        """Update the project header and log project validation status."""
         customer_name = self.data.client.name or "Unknown customer"
         address = self.data.client.address.street or "Address not available"
         self.project_title.configure(text=customer_name)
@@ -451,6 +472,7 @@ class App(ctk.CTk):
         self._log(f"Loaded {customer_name} ({self.data.project.id}).")
 
     def _log_validation_report(self):
+        """Write current project and template validation issues to the log."""
         report = self.data.validation_report
         if report.errors or report.warnings:
             self._log(self.data.format_validation_report())
@@ -469,6 +491,7 @@ class App(ctk.CTk):
         title: str = "Select a project to load",
         confirm_text: str = "Load Project",
     ) -> dict:
+        """Show a selectable project list and return the confirmed project."""
         if not projects:
             return {}
 
@@ -501,6 +524,7 @@ class App(ctk.CTk):
         buttons = []
 
         def select(index):
+            """Highlight the selected project row."""
             selected_index["value"] = index
             for button in buttons:
                 button.configure(fg_color="transparent")
@@ -519,6 +543,7 @@ class App(ctk.CTk):
         select(0)
 
         def confirm():
+            """Save the selected project and close the selection dialog."""
             selected["project"] = projects[selected_index["value"]]
             dialog.destroy()
 
@@ -542,21 +567,25 @@ class App(ctk.CTk):
         return selected["project"]
 
     def open_settings(self):
+        """Open the settings workbook when it exists."""
         if self.settings.files.settings.is_file():
             os.startfile(self.settings.files.settings)
         return f"Opened settings file at {self.settings.files.settings}."
 
     def _open_template(self, template_path: Path, label: str):
+        """Open a template file or raise a descriptive missing-file error."""
         if not template_path.is_file():
             raise FileNotFoundError(f"{label} template not found at {template_path}")
         os.startfile(template_path)
         return f"Opened {label} template at {template_path}."
 
     def open_pricing_template(self):
+        """Open the pricing spreadsheet template."""
         template_path = self.settings.files.templates_folder / "pricing_spreadsheet.xlsx"
         return self._open_template(template_path, "pricing spreadsheet")
 
     def open_cover_template(self):
+        """Open the active cover letter template or the first available template."""
         if self.data.files.cover_letter_template and self.data.files.cover_letter_template.is_file():
             return self._open_template(self.data.files.cover_letter_template, "cover letter")
 
@@ -567,14 +596,17 @@ class App(ctk.CTk):
         raise FileNotFoundError("No cover letter template found in templates folder")
 
     def open_email_template(self):
+        """Open the configured HTML email template."""
         template_path = self.settings.files.templates_folder / "email.html"
         return self._open_template(template_path, "email")
 
     def create_project_in_solargraf(self):
+        """Open SolarGraf's project creation page in the browser."""
         webbrowser.open("https://app.solargraf.com/projects/create")
         return "Opened SolarGraf project creation page in web browser."
 
     def load_project_from_solargraf(self):
+        """Select a recent SolarGraf project and load its data and templates."""
         projects_data = self.scraper.get_projects(self.settings)
         if not projects_data:
             raise RuntimeError("No SolarGraf projects found.")
@@ -592,6 +624,7 @@ class App(ctk.CTk):
         return f"Loaded project {self.data.project.id}."
 
     def continue_local_project(self):
+        """Select a saved local project and restore it without rewriting its data."""
         projects = []
         project_files = self.settings.files.projects_folder.glob("*/data.json")
         for data_path in sorted(project_files):
@@ -626,16 +659,19 @@ class App(ctk.CTk):
         return f"Continued project {self.data.project.id}."
 
     def open_images_folder(self):
+        """Open the images folder for the currently loaded project."""
         self._require_project()
         os.startfile(self.data.files.images_folder)
         return f"Opened images folder for project {self.data.project.id}."
 
     def open_project_in_solargraf(self):
+        """Open the current project in SolarGraf."""
         self._require_project()
         webbrowser.open(f"https://app.solargraf.com/projects/{self.data.project.id}")
         return f"Opened SolarGraf project {self.data.project.id}."
 
     def update_project_data(self):
+        """Refresh the loaded project's source data and template values."""
         self._require_project()
         payload = self.scraper.get_project_data(self.data.project.api_id, self.settings)
         if not payload:
@@ -645,18 +681,21 @@ class App(ctk.CTk):
         return f"Updated project data for {self.data.project.id}."
 
     def download_proposal_document(self):
+        """Download the SolarGraf proposal PDF and refresh its derived placeholders."""
         self._require_project()
         output_path = self.scraper.get_proposal_document(self.data)
         self.templates.update(self.data)
         return f"Downloaded proposal document to {output_path}."
 
     def open_pricing_spreadsheet(self):
+        """Generate the pricing workbook from project data and open it."""
         self._require_project()
         self.office.complete_pricing_spreadsheet(self.data, self.templates)
         os.startfile(self.data.files.pricing_spreadsheet)
         return f"Generated and opened pricing spreadsheet {self.data.files.pricing_spreadsheet}."
 
     def generate_cover_letter(self):
+        """Generate a populated cover letter and open the resulting document."""
         self._require_project()
         self.office.complete_cover_letter(self.data, self.templates)
         os.startfile(self.data.files.cover_letter_docx)
@@ -665,12 +704,14 @@ class App(ctk.CTk):
         )
 
     def finalize_proposal(self):
+        """Create the final proposal package and attempt post-generation actions."""
         self._require_project()
         proposal_path = self.office.finalize_proposal(
             self.data, self.templates, self.scraper
         )
 
         def run_post_generation_action(label, action):
+            """Run a follow-up action and return a status string for its result."""
             try:
                 result = action()
             except Exception as exc:

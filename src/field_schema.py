@@ -1,3 +1,5 @@
+"""Field provenance models and configurable project-data validation."""
+
 from __future__ import annotations
 
 import json
@@ -78,6 +80,8 @@ DEFAULT_SOURCE_PATHS: dict[str, tuple[str | int, ...]] = {
 
 @dataclass(frozen=True)
 class FieldProvenance:
+    """Describe the origin and transformation history of one field value."""
+
     source: str
     source_path: tuple[str | int, ...] | None = None
     used_fallback: bool = False
@@ -85,6 +89,7 @@ class FieldProvenance:
     derived_from: tuple[str, ...] = ()
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize provenance into JSON-compatible values."""
         return {
             "source": self.source,
             "source_path": list(self.source_path) if self.source_path else None,
@@ -96,12 +101,15 @@ class FieldProvenance:
 
 @dataclass(frozen=True)
 class ValidationIssue:
+    """Represent one field validation error or warning."""
+
     severity: str
     field: str
     code: str
     message: str
 
     def to_dict(self) -> dict[str, str]:
+        """Serialize the issue into a JSON-compatible dictionary."""
         return {
             "severity": self.severity,
             "field": self.field,
@@ -112,19 +120,24 @@ class ValidationIssue:
 
 @dataclass
 class ValidationReport:
+    """Collect schema issues and report whether they block generation."""
+
     enforcement: str = "advisory"
     errors: list[ValidationIssue] = field(default_factory=list)
     warnings: list[ValidationIssue] = field(default_factory=list)
 
     @property
     def is_valid(self) -> bool:
+        """Return whether the report contains no errors."""
         return not self.errors
 
     @property
     def blocks_generation(self) -> bool:
+        """Return whether enforced validation errors prevent generation."""
         return self.enforcement == "enforce" and not self.is_valid
 
     def to_dict(self) -> dict[str, Any]:
+        """Serialize report status, errors, and warnings."""
         return {
             "enforcement": self.enforcement,
             "is_valid": self.is_valid,
@@ -134,6 +147,7 @@ class ValidationReport:
         }
 
     def format(self) -> str:
+        """Format all issues as newline-separated field messages."""
         lines = [
             f"{issue.field}: {issue.message}" for issue in self.errors + self.warnings
         ]
@@ -142,6 +156,8 @@ class ValidationReport:
 
 @dataclass(frozen=True)
 class FieldSchema:
+    """Hold source mappings, defaults, validation rules, and freshness policy."""
+
     enforcement: str
     source_paths: dict[str, tuple[str | int, ...]]
     defaults: dict[str, Any]
@@ -151,6 +167,7 @@ class FieldSchema:
 
 
 def load_field_schema(path: Path) -> FieldSchema:
+    """Load and validate the field-schema JSON file at path."""
     if not path.is_file():
         return FieldSchema(
             enforcement="advisory",
@@ -230,6 +247,7 @@ def load_field_schema(path: Path) -> FieldSchema:
 def schema_issues(
     instance: dict[str, Any], schema: dict[str, Any], severity: str
 ) -> list[ValidationIssue]:
+    """Validate an instance and convert sorted schema failures into issues."""
     validator = Draft202012Validator(
         schema, format_checker=Draft202012Validator.FORMAT_CHECKER
     )
@@ -277,6 +295,7 @@ def validate_instance(
     source_payload: dict[str, Any],
     now: datetime,
 ) -> ValidationReport:
+    """Apply configured schemas and source-timestamp freshness validation."""
     report = ValidationReport(enforcement=schema.enforcement)
     report.errors.extend(
         schema_issues(instance, schema.blocking_schema, severity="error")
@@ -301,6 +320,7 @@ def validate_instance(
 def _freshness_issue(
     value: Any, freshness: dict[str, Any], now: datetime
 ) -> ValidationIssue | None:
+    """Return a missing, invalid, or stale timestamp issue when applicable."""
     source_path = freshness["source_path"]
     field_path = ".".join(str(part) for part in source_path)
     if value is None:
@@ -345,6 +365,7 @@ def _freshness_issue(
 def _lookup_source_path(
     source: dict[str, Any], path: tuple[str | int, ...]
 ) -> Any:
+    """Read a nested source value, returning None when a path is absent."""
     value: Any = source
     try:
         for segment in path:
@@ -355,6 +376,7 @@ def _lookup_source_path(
 
 
 def _parse_source_paths(value: Any) -> dict[str, tuple[str | int, ...]]:
+    """Validate and normalize the configured field-to-source path mapping."""
     if not isinstance(value, dict):
         raise ValueError("Field schema source_paths must be a JSON object")
     paths = {}
@@ -366,6 +388,7 @@ def _parse_source_paths(value: Any) -> dict[str, tuple[str | int, ...]]:
 
 
 def _parse_path(value: Any, label: str) -> tuple[str | int, ...]:
+    """Validate a non-empty path array and return it as a tuple."""
     if not isinstance(value, list) or not value:
         raise ValueError(f"Field schema path for {label} must be a non-empty array")
     if any(

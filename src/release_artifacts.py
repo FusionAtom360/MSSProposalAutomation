@@ -1,3 +1,5 @@
+"""Download, verify, extract, and safely replace signed release artifacts."""
+
 from __future__ import annotations
 
 import hashlib
@@ -31,6 +33,7 @@ logger = logging.getLogger("mss_proposal_automation.release")
 
 
 def version_from_release(release: dict[str, Any]) -> Version:
+    """Parse and return the semantic version declared in release metadata."""
     body = release.get("body", "")
     match = re.search(r"^Version: ([^\s]+)$", body, re.MULTILINE)
     if not match:
@@ -42,6 +45,7 @@ def version_from_release(release: dict[str, Any]) -> Version:
 
 
 def release_assets(release: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """Return the required archive, checksum, and signature assets by role."""
     assets = release.get("assets")
     if not isinstance(assets, list):
         raise ValueError("Release assets are missing")
@@ -68,6 +72,7 @@ def release_assets(release: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def download_asset(asset: dict[str, Any], destination: Path) -> None:
+    """Download a repository release asset while enforcing its size limit."""
     url = asset.get("browser_download_url")
     expected_prefix = (
         f"https://github.com/{REPOSITORY}/releases/download/"
@@ -99,6 +104,7 @@ def download_asset(asset: dict[str, Any], destination: Path) -> None:
 
 
 def _read_manifest(archive: Path) -> dict[str, Any]:
+    """Read and validate the release manifest from an archive."""
     try:
         with zipfile.ZipFile(archive) as package:
             _validate_archive_entries(package)
@@ -122,6 +128,7 @@ def verify_release_artifact(
     expected_tag: str,
     expected_version: Version,
 ) -> dict[str, Any]:
+    """Verify release contents, checksum, metadata, and Sigstore signature."""
     if archive.stat().st_size > MAX_ARCHIVE_SIZE:
         raise ValueError("Release archive exceeds the allowed size")
     if checksum_file.stat().st_size > MAX_CHECKSUM_SIZE:
@@ -225,6 +232,7 @@ def verify_release_artifact(
 
 
 def preserve_local_files(current_src: Path, staged_src: Path) -> None:
+    """Copy user-managed environment, logs, schema, and templates to staged src."""
     environment_file = current_src / ".env"
     if environment_file.is_file():
         shutil.copy2(environment_file, staged_src / ".env")
@@ -249,6 +257,7 @@ def preserve_local_files(current_src: Path, staged_src: Path) -> None:
 
 
 def create_backup_path(parent: Path) -> Path:
+    """Reserve and return a unique backup path under parent."""
     backup = Path(
         tempfile.mkdtemp(prefix=".mss-src-backup-", dir=parent)
     )
@@ -257,6 +266,7 @@ def create_backup_path(parent: Path) -> Path:
 
 
 def extract_release_archive(archive: Path, destination: Path) -> dict[str, Any]:
+    """Extract a validated archive beneath destination and return its manifest."""
     with zipfile.ZipFile(archive) as package:
         _validate_archive_entries(package)
         manifest = _read_manifest(archive)
@@ -272,6 +282,7 @@ def extract_release_archive(archive: Path, destination: Path) -> dict[str, Any]:
 
 
 def replace_directory(current: Path, staged: Path, backup: Path) -> None:
+    """Atomically install staged source, restoring the backup if installation fails."""
     if not current.exists():
         os.replace(staged, current)
         return
@@ -295,6 +306,7 @@ def replace_directory(current: Path, staged: Path, backup: Path) -> None:
 
 
 def _validate_archive_entries(package: zipfile.ZipFile) -> None:
+    """Reject unsafe archive paths, file types, counts, and expanded sizes."""
     entries = package.infolist()
     if len(entries) > MAX_ARCHIVE_FILES:
         raise ValueError("Release archive contains too many files")

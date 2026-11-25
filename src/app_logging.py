@@ -1,3 +1,5 @@
+"""Application logging and uncaught-exception reporting."""
+
 from __future__ import annotations
 
 import logging
@@ -18,6 +20,7 @@ def configure_logging(
     level: int = logging.INFO,
     log_dir: Path | None = None,
 ) -> logging.Logger:
+    """Configure the application file logger once and return it."""
     global _logging_started
 
     logger = logging.getLogger(LOGGER_NAME)
@@ -49,11 +52,13 @@ def configure_logging(
 
 
 def set_crash_alert_parent(parent) -> None:
+    """Set the Tk window that should own crash alerts."""
     global _crash_alert_parent
     _crash_alert_parent = parent
 
 
 def build_support_email_url(log_text: str) -> str:
+    """Build a support email URL containing the supplied log text."""
     query = urlencode(
         {
             "subject": "MSS Proposal Automation crash report",
@@ -64,6 +69,7 @@ def build_support_email_url(log_text: str) -> str:
 
 
 def _read_latest_log(logger: logging.Logger) -> str:
+    """Flush and read the first configured file log, or return an error message."""
     for handler in logger.handlers:
         handler.flush()
 
@@ -86,6 +92,7 @@ def show_crash_alert(
     *,
     parent=None,
 ) -> None:
+    """Log an uncaught exception and display a dialog with the latest log."""
     logger.critical(
         "Application crashed",
         exc_info=(exc_type, exc_value, exc_traceback),
@@ -118,6 +125,7 @@ def report_tk_callback_exception(
     *,
     parent=None,
 ) -> None:
+    """Forward an uncaught Tk callback exception to the crash alert handler."""
     show_crash_alert(
         logging.getLogger(LOGGER_NAME),
         exc_type,
@@ -128,6 +136,7 @@ def report_tk_callback_exception(
 
 
 def _show_crash_dialog(log_text: str, parent=None) -> None:
+    """Display a modal crash dialog with email-support and close actions."""
     if parent is None:
         dialog = Tk()
     else:
@@ -167,9 +176,11 @@ def _show_crash_dialog(log_text: str, parent=None) -> None:
 
 
 def install_exception_hooks(logger: logging.Logger | None = None) -> None:
+    """Install process and thread exception hooks for application crashes."""
     logger = logger or logging.getLogger(LOGGER_NAME)
 
     def handle_exception(exc_type, exc_value, exc_traceback):
+        """Report uncaught main-thread exceptions, preserving interrupts."""
         if issubclass(exc_type, KeyboardInterrupt):
             sys.__excepthook__(exc_type, exc_value, exc_traceback)
             return
@@ -177,6 +188,7 @@ def install_exception_hooks(logger: logging.Logger | None = None) -> None:
         show_crash_alert(logger, exc_type, exc_value, exc_traceback)
 
     def handle_thread_exception(args):
+        """Log and report an uncaught worker-thread exception."""
         if issubclass(args.exc_type, KeyboardInterrupt):
             return
 

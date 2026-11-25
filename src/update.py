@@ -1,3 +1,5 @@
+"""Signed-release discovery, verification, installation, and update UI."""
+
 import json
 import logging
 import shutil
@@ -33,9 +35,12 @@ logger = logging.getLogger("mss_proposal_automation.update")
 
 
 class UpdateManager:
+    """Check for verified releases and replace the installed application source."""
+
     RELEASES_URL = f"https://api.github.com/repos/{REPOSITORY}/releases?per_page=30"
 
     def __init__(self):
+        """Load the installed version and initialize updater window state."""
         self.root = Path(__file__).resolve().parent.parent
         self.src = self.root / "src"
         self.window: ctk.CTk | None = None
@@ -47,6 +52,7 @@ class UpdateManager:
             self.current = Version(json.load(file)["version"])
 
     def latest_release(self) -> tuple[dict[str, Any], Version] | None:
+        """Return the newest eligible stable release newer than the installed one."""
         request = urllib.request.Request(
             self.RELEASES_URL,
             headers={
@@ -79,6 +85,7 @@ class UpdateManager:
         return max(candidates, key=lambda candidate: candidate[1])
 
     def update(self):
+        """Download, verify, extract, and install the selected signed release."""
         if self.release is None or self.release_version is None:
             raise RuntimeError("No verified release was selected")
 
@@ -143,6 +150,7 @@ class UpdateManager:
                     logger.warning("Previous source backup retained at %s", backup)
 
     def _sigstore_executable(self) -> Path:
+        """Return the bundled Sigstore executable or explain how to restore it."""
         executable = Path(sys.executable).parent / "sigstore.exe"
         if not executable.is_file():
             raise RuntimeError(
@@ -152,6 +160,7 @@ class UpdateManager:
         return executable
 
     def _replace_source(self, staged_src: Path, backup: Path) -> None:
+        """Swap installed source while safely closing and reopening log handlers."""
         app_logger = logging.getLogger("mss_proposal_automation")
         handlers = list(app_logger.handlers)
         for handler in handlers:
@@ -168,6 +177,7 @@ class UpdateManager:
                 configure_logging(log_dir=self.src / "logs")
 
     def run_ui(self):
+        """Display the updater window and start checking for a release."""
         ctk.set_appearance_mode("System")
         ctk.set_default_color_theme("blue")
 
@@ -194,14 +204,17 @@ class UpdateManager:
         self.window.mainloop()
 
     def report_callback_exception(self, exc, val, tb):
+        """Send an uncaught updater UI exception to the crash reporter."""
         report_tk_callback_exception(exc, val, tb, parent=self.window)
 
     def start_check(self):
+        """Start the progress indicator and launch release discovery."""
         self.progress.configure(mode="indeterminate")
         self.progress.start()
         threading.Thread(target=self.check_update_thread, daemon=True).start()
 
     def check_update_thread(self):
+        """Find a newer release and schedule the result on the UI thread."""
         try:
             latest = self.latest_release()
             if latest is not None:
@@ -225,6 +238,7 @@ class UpdateManager:
             self.window.after(0, lambda message=error_message: self.finish(message))
 
     def start_update(self):
+        """Ask for installation confirmation before starting the update worker."""
         version = self.release_version
         if version is None:
             self.finish("Update failed: no release version was selected.")
@@ -242,6 +256,7 @@ class UpdateManager:
         threading.Thread(target=self.update_thread, daemon=True).start()
 
     def update_thread(self):
+        """Install the selected release and schedule completion or error status."""
         try:
             self.update()
             self.window.after(0, lambda: self.finish("Update complete."))
@@ -262,6 +277,7 @@ class UpdateManager:
             self.window.after(0, lambda message=error_message: self.finish(message))
 
     def finish(self, message):
+        """Display a final updater status and close the updater window shortly."""
         self.progress.stop()
         self.progress.configure(mode="determinate")
         self.progress.set(1)

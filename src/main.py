@@ -1,8 +1,11 @@
+"""Application entry point and startup error handling."""
+
 import logging
 from pathlib import Path
 
 
 def main():
+    """Initialize services and run the update and main application windows."""
     logger = logging.getLogger("mss_proposal_automation")
     app = None
     show_crash_alert = None

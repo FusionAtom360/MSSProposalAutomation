@@ -1,3 +1,5 @@
+"""Generate, validate, publish, and email proposal documents."""
+
 from __future__ import annotations
 
 import hashlib
@@ -20,6 +22,7 @@ from settings import SettingsManager
 
 
 def _validate_pdf(path: Path) -> int:
+    """Validate a non-empty, unencrypted PDF and return its page count."""
     if not path.is_file() or path.stat().st_size == 0:
         raise ValueError(f"PDF is missing or empty: {path}")
 
@@ -37,11 +40,13 @@ def _validate_pdf(path: Path) -> int:
 
 
 def _fsync_file(path: Path) -> None:
+    """Flush a file's contents to storage."""
     with path.open("r+b") as file:
         os.fsync(file.fileno())
 
 
 def _copy_file_fsynced(source: str | Path, destination: str | Path) -> str | Path:
+    """Copy a file and flush its contents before returning the destination."""
     with Path(source).open("rb") as source_file:
         with Path(destination).open("wb") as destination_file:
             shutil.copyfileobj(source_file, destination_file)
@@ -51,6 +56,7 @@ def _copy_file_fsynced(source: str | Path, destination: str | Path) -> str | Pat
 
 
 def _sha256(path: Path) -> str:
+    """Compute a file's SHA-256 digest in bounded-size chunks."""
     digest = hashlib.sha256()
     with path.open("rb") as file:
         for chunk in iter(lambda: file.read(1024 * 1024), b""):
@@ -59,6 +65,7 @@ def _sha256(path: Path) -> str:
 
 
 def _file_record(path: Path, relative_to: Path | None = None) -> dict[str, Any]:
+    """Return path, byte-size, and digest metadata for a file."""
     return {
         "path": str(path.relative_to(relative_to)) if relative_to else str(path),
         "size_bytes": path.stat().st_size,
@@ -67,13 +74,17 @@ def _file_record(path: Path, relative_to: Path | None = None) -> dict[str, Any]:
 
 
 class OfficeDocumentManager:
+    """Create proposal documents and publish complete proposal packages."""
+
     def __init__(self, base_dir: str | Path | None = None) -> None:
+        """Set the application, template, and document directories."""
         self.base_dir = Path(base_dir) if base_dir else Path(__file__).resolve().parent
         self.templates_dir = self.base_dir / "templates"
         self.documents_dir = self.base_dir / "documents"
         self.alias_mapping = {}
 
     def complete_pricing_spreadsheet(self, data: DataManager, variables) -> Path:
+        """Validate inputs, substitute placeholders, and save the pricing workbook."""
         data.validate_for_document_generation("pricing")
 
         variables.update(data)
@@ -102,6 +113,7 @@ class OfficeDocumentManager:
         return data.files.pricing_spreadsheet
 
     def complete_cover_letter(self, data: DataManager, variables) -> Path:
+        """Populate and save the configured cover-letter DOCX template."""
         data.validate_for_document_generation("cover_letter")
         data.update_from_pricing_spreadsheet()
         variables.update(data)
@@ -114,6 +126,7 @@ class OfficeDocumentManager:
         return data.files.cover_letter_docx
 
     def finalize_proposal(self, data: DataManager, variables, scraper: Scraper) -> Path:
+        """Build a staged PDF package, manifest it, and publish it atomically."""
         data.validate_for_document_generation("final_proposal")
         documents_dir = Path(data.files.documents_folder)
         if documents_dir == Path("."):
@@ -331,6 +344,7 @@ class OfficeDocumentManager:
 
     @staticmethod
     def _parse_page_limit(value: Any, specsheet_name: str) -> int:
+        """Parse a configured spec-sheet page limit as an integer."""
         if isinstance(value, bool) or not isinstance(value, (int, float, str)):
             raise ValueError(
                 f"Configured page count for {specsheet_name} must be an integer."
@@ -348,6 +362,7 @@ class OfficeDocumentManager:
         return page_limit
 
     def generate_email(self, data: DataManager, variables) -> None:
+        """Create and display an Outlook draft with the final proposal attached."""
         data.update_from_pricing_spreadsheet()
         variables.update(data)
 
@@ -368,6 +383,7 @@ class OfficeDocumentManager:
 
     @staticmethod
     def _replace_in_paragraph(paragraph, replacements: Mapping[str, Any]) -> None:
+        """Replace paragraph placeholders across runs without losing formatting."""
         runs = paragraph.runs
         if not runs:
             return
@@ -428,6 +444,7 @@ class OfficeDocumentManager:
 
     @staticmethod
     def get_cell_value(data: DataManager, sheet_name: str, cell_ref: str) -> Any:
+        """Read a workbook cell, returning zero if the workbook or cell is unavailable."""
         if data.files.pricing_spreadsheet.exists():
             try:
                 wb = load_workbook(
@@ -444,6 +461,7 @@ class OfficeDocumentManager:
         return 0
 
     def copy_to_fileserver(self, data: DataManager, settings: SettingsManager) -> Path:
+        """Copy the published proposal package to the configured bids folder."""
         if not settings.files.bids_folder:
             raise ValueError("FILESERVER_BIDS_FOLDER environment variable is not set.")
 

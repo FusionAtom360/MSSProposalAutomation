@@ -1,3 +1,5 @@
+"""Project data models, source provenance, validation, and workbook inputs."""
+
 import json
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -24,6 +26,8 @@ _LOAN_INTEREST_RATE_ENV = os.getenv("LOAN_INTEREST_RATE")
 
 @dataclass(frozen=True)
 class ProposalPdfMetrics:
+    """Key sizing and usage metrics extracted from a proposal PDF."""
+
     system_size_kw: float
     annual_production_kwh: float
     usage_percentage: float
@@ -84,7 +88,10 @@ _MODEL_FIELD_NAMES = (
 
 
 class DataManager:
+    """Load project data and coordinate its models, sources, and validation."""
+
     def __init__(self):
+        """Initialize project models, schema validation, and provenance state."""
         self.data = {}
         self.proposal_pdf_metrics: ProposalPdfMetrics | None = None
         self.settings = SettingsManager()
@@ -106,6 +113,7 @@ class DataManager:
         self.references = self.References()
 
     def load_json(self, json_data: dict, save_to_file: bool = True):
+        """Load a SolarGraf payload, derive model values, validate, and optionally save it."""
         self.proposal_pdf_metrics = None
         self.field_schema = load_field_schema(self.field_schema_path)
         previous_provenance = self.field_provenance.copy()
@@ -257,6 +265,7 @@ class DataManager:
                 json.dump(self.data, f, indent=4)
 
     def set_api_id(self, api_id):
+        """Set the SolarGraf API identifier and record its application origin."""
         self.project.api_id = api_id
         self.record_provenance(
             "project.api_id",
@@ -269,9 +278,11 @@ class DataManager:
     def record_provenance(
         self, field_name: str, provenance: FieldProvenance
     ) -> None:
+        """Associate source and transformation details with a model field."""
         self.field_provenance[field_name] = provenance
 
     def _record_environment_provenance(self) -> None:
+        """Record whether loan defaults came from environment variables."""
         for field_name, environment_name, environment_value in (
             ("pricing.loan_term", "LOAN_TERM", _LOAN_TERM_ENV),
             (
@@ -290,6 +301,7 @@ class DataManager:
             )
 
     def _record_default_provenance(self) -> None:
+        """Mark every known model field as initially using a fallback."""
         for field_name in _MODEL_FIELD_NAMES:
             self.record_provenance(
                 field_name,
@@ -297,12 +309,14 @@ class DataManager:
             )
 
     def provenance_report(self) -> dict[str, dict[str, Any]]:
+        """Return serialized provenance for all fields with recorded origins."""
         return {
             field_name: provenance.to_dict()
             for field_name, provenance in self.field_provenance.items()
         }
 
     def format_validation_report(self) -> str:
+        """Format validation issues with each field's source details."""
         lines = [
             f"Data validation (enforcement={self.validation_report.enforcement}):"
         ]
@@ -323,6 +337,7 @@ class DataManager:
         return "\n".join(lines)
 
     def validate_fields(self) -> ValidationReport:
+        """Validate the current model against the loaded field schema."""
         report = validate_instance(
             self._validation_data(),
             self.field_schema,
@@ -334,9 +349,11 @@ class DataManager:
 
     @property
     def is_validated(self) -> bool:
+        """Return whether current project fields have no validation errors."""
         return self.validate_fields().is_valid
 
     def _validation_data(self) -> dict[str, Any]:
+        """Build the nested model dictionary consumed by schema validation."""
         return {
             "project": asdict(self.project),
             "client": {
@@ -375,6 +392,7 @@ class DataManager:
         }
 
     def _get_field(self, field_name: str, default: Any = _UNSET) -> Any:
+        """Read a configured source field and record its fallback provenance."""
         source_path = self.field_schema.source_paths.get(field_name)
         if source_path is None:
             source_path = DEFAULT_SOURCE_PATHS.get(field_name)
@@ -400,6 +418,7 @@ class DataManager:
     def _record_spreadsheet_provenance(
         self, field_name: str, worksheet: str, cell: str
     ) -> None:
+        """Record a value's workbook, worksheet, and cell origin."""
         self.record_provenance(
             field_name,
             FieldProvenance(
@@ -409,6 +428,7 @@ class DataManager:
         )
 
     def _record_derived(self, field_name: str, *inputs_and_transformation: str) -> None:
+        """Record the input fields and transformation used to derive a value."""
         *input_fields, transformation = inputs_and_transformation
         input_provenance = [
             self.field_provenance[name]
@@ -551,14 +571,17 @@ class DataManager:
             )
 
     def _set_annual_production(self, annual_production):
+        """Store the annual production value derived from proposal metrics."""
         self.system.annual_production = annual_production
 
     def _get(self, *keys, default=None) -> Any:
+        """Look up a nested payload path and return default when it is absent."""
         value, _ = self._lookup(self.data, keys, default)
         return value
 
     @staticmethod
     def _lookup(data: Any, keys: Any, default: Any) -> tuple[Any, bool]:
+        """Traverse dictionary keys or list indices and report fallback use."""
         try:
             for key in keys:
                 if isinstance(key, int):
@@ -574,6 +597,7 @@ class DataManager:
 
     @staticmethod
     def _clean_float(value):
+        """Convert a value to float, warning and returning zero on failure."""
         try:
             return float(value)
         except (ValueError, TypeError):
@@ -584,12 +608,14 @@ class DataManager:
 
     @staticmethod
     def _clean_int(value):
+        """Convert a value to int, returning zero when conversion fails."""
         try:
             return int(value)
         except (ValueError, TypeError):
             return 0
 
     def update_from_pricing_spreadsheet(self):
+        """Load settings and pricing workbook values into models and provenance."""
         if self.files.settings.is_file():
             workbook = load_workbook(
                 self.files.settings, data_only=True, read_only=True
@@ -741,6 +767,7 @@ class DataManager:
             workbook.close()
 
     def _get_system_type(self):
+        """Classify the project as PV, storage-only, or PV with storage."""
         battery_data = self._get_field("system.battery.source", default=None)
         derived_from = ["system.battery.source"]
         if not isinstance(battery_data, dict) or not battery_data:
@@ -762,6 +789,7 @@ class DataManager:
         return system_type
 
     def _calculate_annual_consumption(self, bills):
+        """Sum consumptionInKwh values from the project's utility bills."""
         total_consumption = 0.0
         # TODO: Rewrite for real data
         for bill in bills:
@@ -770,6 +798,7 @@ class DataManager:
         return total_consumption
 
     def _get_panel_ptc(self) -> int | None:
+        """Resolve panel PTC from project data or the module catalog workbook."""
         panel_ptc = self._get_field("system.panel.ptc")
         if panel_ptc is not None and panel_ptc > 0:
             return panel_ptc
@@ -818,6 +847,8 @@ class DataManager:
 
     @dataclass
     class Project:
+        """Project identifiers and display name."""
+
         id: int = 0
         api_id: str = ""
         financial_id: str = ""
@@ -825,7 +856,10 @@ class DataManager:
         name: str = ""
 
     class Client:
+        """Customer contact details and service address."""
+
         def __init__(self):
+            """Initialize customer fields and a nested address model."""
             self.first_name: str = ""
             self.last_name: str = ""
             self.name: str = ""
@@ -835,6 +869,8 @@ class DataManager:
 
         @dataclass
         class Address:
+            """Customer's street, city, region, and postal code."""
+
             street: str = ""
             city: str = ""
             region_code: str = ""
@@ -842,12 +878,17 @@ class DataManager:
 
     @dataclass
     class Utility:
+        """Utility name and annual customer energy consumption."""
+
         name: str = ""
         annual_consumption: float = 0.0
 
     @dataclass
     class System:
+        """PV and energy-storage system configuration."""
+
         def __init__(self):
+            """Initialize system properties and nested component models."""
             self.type: int = 0
             self.ess_type: int = 0
             self.pv_size: float = 0.0
@@ -860,6 +901,8 @@ class DataManager:
 
         @dataclass
         class Panel:
+            """Solar panel product, rating, count, and specification sheet."""
+
             manufacturer: str = ""
             model: str = ""
             size: int = 0
@@ -871,6 +914,8 @@ class DataManager:
 
         @dataclass
         class Inverter:
+            """Inverter product, efficiency, count, and specification sheet."""
+
             manufacturer: str = ""
             model: str = ""
             efficiency: float = 0.0
@@ -880,6 +925,8 @@ class DataManager:
 
         @dataclass
         class Battery:
+            """Battery product, capacity, count, and specification sheet."""
+
             manufacturer: str = ""
             model: str = ""
             capacity: float = 0.0
@@ -889,6 +936,8 @@ class DataManager:
 
     @dataclass
     class Pricing:
+        """Proposal pricing and loan calculation values."""
+
         id: str = ""
         pv_cost = 0.0
         ess_cost: float = 0.0
@@ -904,6 +953,8 @@ class DataManager:
 
     @dataclass
     class Files:
+        """Paths to project directories, templates, and generated documents."""
+
         pricing_spreadsheet_template: Path = Path()
         cover_letter_template: Path = Path()
         solargraf_proposal_template: Path = Path()
@@ -924,6 +975,8 @@ class DataManager:
 
     @dataclass
     class References:
+        """Settings-workbook cell references used by spreadsheet import."""
+
         tree_trimming_required: str = ""
         ess_type: str = ""
         pv_cost: str = ""

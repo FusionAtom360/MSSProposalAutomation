@@ -1,3 +1,5 @@
+"""SolarGraf project retrieval, proposal downloads, and spec-sheet access."""
+
 import re
 from io import BytesIO
 from urllib.parse import urlparse
@@ -22,6 +24,7 @@ _PDF_NUMBER = r"([\d,]+(?:\.\d+)?)"
 
 
 def _extract_pdf_number(text: str, label: str, unit: str) -> float:
+    """Extract a labeled numeric value and unit from normalized PDF text."""
     normalized_text = re.sub(r"\s+", " ", text)
     match = re.search(
         rf"{re.escape(label)}\s*{_PDF_NUMBER}\s*{unit}",
@@ -34,6 +37,7 @@ def _extract_pdf_number(text: str, label: str, unit: str) -> float:
 
 
 def extract_proposal_pdf_metrics(pdf_content: bytes) -> ProposalPdfMetrics:
+    """Read system size, first-year production, and usage from a proposal PDF."""
     pages = [
         re.sub(r"\s+", " ", page.extract_text() or "")
         for page in PdfReader(BytesIO(pdf_content)).pages
@@ -88,13 +92,17 @@ TARGET_PROJECT_RESPONSE = re.compile(r"^https://api\.solargraf\.com/projects/[^/
 
 
 class Scraper:
+    """Retrieve SolarGraf data and download proposal-related documents."""
+
     def __init__(self, headless: bool = False, browser_channel: str = "chrome") -> None:
+        """Configure browser options, download sequencing, and HTTP access."""
         self.headless = headless
         self.browser_channel = browser_channel
         self.spec_sheet_counter = 0
         self.http = AuthenticatedHttpClient()
         
     def _dismiss_cookie_banner(self, page) -> None:
+        """Dismiss the OneTrust cookie banner when the page presents it."""
         reject_button = page.locator("#onetrust-reject-all-handler")
         if reject_button.count():
             try:
@@ -103,6 +111,7 @@ class Scraper:
                 pass
 
     def _login_if_possible(self, page, check_text) -> None:
+        """Submit configured credentials and wait for a signed-in page marker."""
         email = os.getenv("SOLARGRAF_EMAIL")
         password = os.getenv("SOLARGRAF_PASSWORD")
 
@@ -116,6 +125,7 @@ class Scraper:
         page.get_by_text(check_text).first.wait_for(state="visible")
 
     def _extract_project_id(self, payload: dict) -> str:
+        """Extract a project identifier from common response fields."""
         project_id = payload.get("project_id") or payload.get("id") or payload.get("_id")
         if not project_id:
             raise RuntimeError("Project response did not include a project_id, id, or _id field")
@@ -123,10 +133,12 @@ class Scraper:
         return str(project_id)
 
     def _wait_for_project_page(self, page) -> None:
+        """Wait until browser navigation reaches a SolarGraf project URL."""
         while not TARGET_PROJECT_PAGE.match(page.url):
             page.wait_for_timeout(1000)
 
     def get_project_data(self, project_api_id: str, settings: SettingsManager) -> dict:
+        """Refresh authentication if needed and fetch one SolarGraf project."""
         self._refresh_auth_token(settings)
         if not project_api_id:
             raise RuntimeError("Cannot retrieve project data without a project API ID.")
@@ -147,6 +159,7 @@ class Scraper:
         return response.json()
     
     def get_proposal_document(self, data: DataManager) -> Path:
+        """Download a project's proposal PDF, extract its metrics, and open it."""
         data.validate_for_document_generation("proposal_download")
         base_url = "https://app.solargraf.com"
         pdf_path = (
@@ -176,10 +189,12 @@ class Scraper:
     
     @staticmethod
     def _is_http_url(value: str) -> bool:
+        """Return whether value is an absolute HTTP or HTTPS URL."""
         parsed = urlparse(value)
         return parsed.scheme in {"http", "https"} and bool(parsed.netloc)
 
     def download(self, url: str, output_dir: Path):
+        """Download a URL with Playwright and save it under a numbered PDF name."""
         if not isinstance(url, str):
             raise ValueError(f"URL must be a string, got {type(url).__name__}")
 
@@ -210,6 +225,7 @@ class Scraper:
             return output_path
 
     def get_spec_sheet(self, url: str, output_dir: Path):
+        """Fetch a spec-sheet URL with the authenticated HTTP session."""
         url = url.strip()
         if not url or not self._is_http_url(url):
             raise ValueError(f"Spec sheet URL must be a valid HTTP(S) URL, got: {url!r}")
@@ -229,6 +245,7 @@ class Scraper:
         return output_path
     
     def get_projects(self, settings: SettingsManager) -> list[dict]:
+        """Return recent company projects in the application's selection shape."""
         self._refresh_auth_token(settings)
 
         response = self.http.get(
@@ -257,6 +274,7 @@ class Scraper:
         return project_data
 
     def _refresh_auth_token(self, settings: SettingsManager) -> None:
+        """Reuse, refresh, or interactively acquire a valid SolarGraf token."""
         endpoint = "https://api.solargraf.com/companies/27792/projects"
         if self.http.get(endpoint, auth_key=settings.auth.key).ok:
             return
@@ -271,6 +289,7 @@ class Scraper:
         self._wait_for_auth_token(settings)
 
     def _wait_for_auth_token(self, settings: SettingsManager) -> None:
+        """Wait for a token submitted to the local receiver and persist it."""
         if self.http.get("https://api.solargraf.com/companies/27792/projects", headers={"authorization": f"Bearer {settings.auth.key}"}, timeout=30).ok:
             return
         if self.http.get("https://api.solargraf.com/companies/27792/projects", headers={"authorization": f"Bearer {os.getenv("REQUEST_AUTH_KEY")}"}, timeout=30).ok:

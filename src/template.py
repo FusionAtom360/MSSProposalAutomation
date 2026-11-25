@@ -1,3 +1,5 @@
+"""Resolve proposal placeholders from project data and workbook settings."""
+
 import datetime
 
 from data import DataManager
@@ -6,7 +8,10 @@ from openpyxl import load_workbook
 from datetime import datetime
 
 class TemplateManager:
+    """Build and resolve document placeholders with provenance information."""
+
     def __init__(self, data: DataManager):
+        """Initialize placeholder state and populate it from project data."""
         self.templates = {}
         self.aliases = {}
         self.provenance = {}
@@ -15,6 +20,7 @@ class TemplateManager:
         self.update(data)
 
     def update(self, data: DataManager):
+        """Refresh placeholders, aliases, provenance, and validation warnings."""
         self.unresolved_placeholders = set()
         self.validation_report = ValidationReport(
             enforcement=data.field_schema.enforcement
@@ -195,6 +201,7 @@ class TemplateManager:
                 self.provenance[placeholder] = pdf_provenance
     
     def _update_from_settings_spreadsheet(self, data: DataManager):
+        """Load configured aliases and fixed variables from the settings workbook."""
         if data.files.settings.is_file():
             workbook = load_workbook(data.files.settings, data_only=True, read_only=True)
             sheet = workbook["Aliases"]
@@ -236,9 +243,11 @@ class TemplateManager:
     
 
     def get_all(self):
+        """Return the mapping of all current placeholder values."""
         return self.templates
 
     def resolve(self, template_name):
+        """Return a placeholder's value, recording a warning if it is missing."""
         value = self.templates.get(template_name, None)
         if value is None:
             if template_name not in self.unresolved_placeholders:

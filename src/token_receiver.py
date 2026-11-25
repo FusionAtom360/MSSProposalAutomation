@@ -1,3 +1,5 @@
+"""Loopback HTTP endpoint for receiving one SolarGraf token per session."""
+
 from __future__ import annotations
 
 import json
@@ -13,11 +15,14 @@ REQUEST_TIMEOUT_SECONDS = 5
 
 @dataclass
 class TokenSession:
+    """Thread-safe state for accepting and signaling receipt of one token."""
+
     token: str | None = None
     received: Event = field(default_factory=Event)
     _lock: Lock = field(default_factory=Lock)
 
     def accept(self, token: str) -> bool:
+        """Store the first token and signal waiters; reject later tokens."""
         with self._lock:
             if self.token is not None:
                 return False
@@ -27,17 +32,22 @@ class TokenSession:
 
 
 class TokenReceiver(BaseHTTPRequestHandler):
+    """Validate bounded JSON token submissions and answer with JSON status."""
+
     protocol_version = "HTTP/1.1"
 
     @property
     def session(self) -> TokenSession:
+        """Return the token session associated with this server."""
         return cast(TokenHTTPServer, self.server).session
 
     def setup(self) -> None:
+        """Initialize the request handler with a bounded socket timeout."""
         super().setup()
         self.connection.settimeout(REQUEST_TIMEOUT_SECONDS)
 
     def do_POST(self) -> None:
+        """Accept a valid token POST at /token and reject malformed requests."""
         if self.path != "/token":
             self._send_json(404, {"error": "not_found"})
             return
@@ -117,6 +127,7 @@ class TokenReceiver(BaseHTTPRequestHandler):
         self._send_json(200, {"status": "accepted"})
 
     def _send_json(self, status: int, payload: dict[str, str]) -> None:
+        """Write a JSON response with explicit length and no-store headers."""
         body = json.dumps(payload).encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", "application/json; charset=utf-8")
@@ -129,10 +140,14 @@ class TokenReceiver(BaseHTTPRequestHandler):
             self.close_connection = True
 
     def log_message(self, format: str, *args: object) -> None:
+        """Suppress the base handler's default request logging."""
         _ = format, args
 
 
 class TokenHTTPServer(HTTPServer):
+    """HTTP server that owns a single token-receiving session."""
+
     def __init__(self, server_address: tuple[str, int]) -> None:
+        """Create the token session and bind the receiver request handler."""
         self.session = TokenSession()
         super().__init__(server_address, TokenReceiver)
