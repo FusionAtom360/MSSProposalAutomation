@@ -6,3 +6,6 @@
 /docs/
 /__pycache__/
 /bids/
+/.ruff_cache/
+/.pytest_cache/
+/.mypy_cache/
