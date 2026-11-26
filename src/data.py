@@ -685,7 +685,30 @@ class DataManager:
                     "check the loan inputs."
                 )
             self.pricing.loan_monthly_payment = math.ceil(loan_monthly_payment)
-            self.system.panel.ptc = int(float(sheet[self.references.panel_ptc].value))
+            panel_ptc_cell = self.references.panel_ptc
+            panel_ptc_value = sheet[panel_ptc_cell].value
+            panel_ptc_missing = panel_ptc_value is None or (
+                isinstance(panel_ptc_value, str)
+                and panel_ptc_value.strip().casefold() in {"", "none"}
+            )
+            if panel_ptc_missing:
+                workbook.close()
+                raise ValueError(
+                    f"Panel PTC cell (Pricing Calculator!{panel_ptc_cell}) in "
+                    f"{self.files.pricing_spreadsheet} is blank or contains "
+                    f"{panel_ptc_value!r}. This value is required; fill in the "
+                    "panel PTC and save the workbook."
+                )
+            try:
+                self.system.panel.ptc = int(float(panel_ptc_value))
+            except (TypeError, ValueError, OverflowError) as exc:
+                workbook.close()
+                raise ValueError(
+                    f"Panel PTC cell (Pricing Calculator!{panel_ptc_cell}) in "
+                    f"{self.files.pricing_spreadsheet} contains "
+                    f"{panel_ptc_value!r}, which is not numeric. Enter a numeric "
+                    "value and save the workbook."
+                ) from exc
             self.system.inverter.efficiency = (
                 float(sheet[self.references.inverter_efficiency].value)
                 if sheet[self.references.inverter_efficiency].value is not None

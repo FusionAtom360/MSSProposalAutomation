@@ -516,27 +516,10 @@ class OfficeDocumentManager:
         )
         try:
             staging_dir.mkdir()
-            manifest = json.loads(
-                (package_dir / "manifest.json").read_text(encoding="utf-8")
-            )
-            for artifact in manifest["artifacts"]:
-                source_relative_path = Path(artifact["path"])
+            for source_relative_path, destination_name in file_names.items():
                 source = package_dir / source_relative_path
-                source_key = source_relative_path.as_posix()
-                destination_name = file_names.get(
-                    source_key, source_relative_path.name
-                )
                 target = staging_dir / destination_name
                 _copy_file_fsynced(source, target)
-                artifact["path"] = destination_name
-
-            with (staging_dir / "manifest.json").open(
-                "w", encoding="utf-8", newline="\n"
-            ) as file:
-                json.dump(manifest, file, indent=2, sort_keys=True)
-                file.write("\n")
-                file.flush()
-                os.fsync(file.fileno())
 
             shutil.copytree(
                 data.files.images_folder,

@@ -324,3 +324,65 @@ def test_missing_saved_monthly_payment_value_has_actionable_error(tmp_path):
     assert "Pricing Calculator!D100" in message
     assert "Ctrl+Alt+F9" in message
     assert "save it" in message
+
+
+def _data_with_pricing_spreadsheet(tmp_path, panel_ptc):
+    settings_path = tmp_path / "settings.xlsx"
+    settings_workbook = Workbook()
+    settings_sheet = settings_workbook.active
+    settings_sheet.title = "Spreadsheet"
+    for row, cell in enumerate(
+        ("A1", "A2", "A3", "A4", "A5", "A6", "A7", "A8", "A9", "A10"),
+        start=2,
+    ):
+        settings_sheet.cell(row=row, column=2, value=cell)
+    settings_workbook.save(settings_path)
+
+    pricing_path = tmp_path / "pricing_spreadsheet.xlsx"
+    pricing_workbook = Workbook()
+    pricing_sheet = pricing_workbook.active
+    pricing_sheet.title = "Pricing Calculator"
+    for cell, value in {
+        "A1": "No",
+        "A2": "Grid-Tied",
+        "A3": 0,
+        "A4": 0,
+        "A5": 0,
+        "A6": 25,
+        "A7": 0.05,
+        "A8": 120,
+        "A9": panel_ptc,
+        "A10": 0.97,
+    }.items():
+        pricing_sheet[cell] = value
+    pricing_workbook.save(pricing_path)
+
+    data = DataManager()
+    data.files.settings = settings_path
+    data.files.pricing_spreadsheet = pricing_path
+    data.system.panel.ptc = 380
+    return data
+
+
+@pytest.mark.parametrize("panel_ptc", [None, "None"])
+def test_missing_panel_ptc_has_actionable_error(tmp_path, panel_ptc):
+    data = _data_with_pricing_spreadsheet(tmp_path, panel_ptc)
+
+    with pytest.raises(ValueError) as error:
+        data.update_from_pricing_spreadsheet()
+
+    message = str(error.value)
+    assert "Pricing Calculator!A9" in message
+    assert "fill in the panel PTC" in message
+
+
+def test_invalid_panel_ptc_has_actionable_error(tmp_path):
+    data = _data_with_pricing_spreadsheet(tmp_path, "not a number")
+
+    with pytest.raises(ValueError) as error:
+        data.update_from_pricing_spreadsheet()
+
+    message = str(error.value)
+    assert "Pricing Calculator!A9" in message
+    assert "not a number" in message
+    assert "Enter a numeric value" in message
