@@ -472,7 +472,7 @@ class OfficeDocumentManager:
         return 0
 
     def copy_to_fileserver(self, data: DataManager, settings: SettingsManager) -> Path:
-        """Copy the published proposal package to the configured bids folder."""
+        """Copy proposal files to the client bids folder using customer-facing names."""
         if not settings.files.bids_folder:
             raise ValueError("FILESERVER_BIDS_FOLDER environment variable is not set.")
 
@@ -487,32 +487,75 @@ class OfficeDocumentManager:
                 "A published proposal package is required before file-server copy."
             )
 
-        run_id = package_dir.name
-        published_dir = destination_folder / f"proposal_{run_id}"
-        if published_dir.exists():
-            raise FileExistsError(
-                f"File-server package already exists: {published_dir}"
-            )
-
+        system_type = (
+            "PV"
+            if data.system.type == 0
+            else "ESS"
+            if data.system.type == 1
+            else "PV ESS"
+        )
+        dated_name = (
+            f"{datetime.now().strftime('%y_%m%d')} "
+            f"{data.client.last_name}, {data.client.first_name}"
+        )
+        file_names = {
+            "final_proposal.pdf": f"{dated_name} {system_type} Proposal.pdf",
+            "supporting/cover_letter_docx.docx": (
+                f"PV ESS Proposal - {data.client.last_name}, "
+                f"{data.client.first_name}.docx"
+            ),
+            "supporting/solargraf_proposal_pdf.pdf": (
+                f"Proposal for - {data.client.name}.pdf"
+            ),
+            "supporting/pricing_spreadsheet.xlsx": (
+                f"{dated_name} {system_type} Bid.xlsx"
+            ),
+        }
         staging_dir = (
-            destination_folder / f".{published_dir.name}.{uuid.uuid4().hex}.tmp"
+            destination_folder / f".fileserver-copy.{uuid.uuid4().hex}.tmp"
         )
         try:
             staging_dir.mkdir()
-            shutil.copytree(
-                package_dir,
-                staging_dir / "proposal_package",
-                copy_function=_copy_file_fsynced,
+            manifest = json.loads(
+                (package_dir / "manifest.json").read_text(encoding="utf-8")
             )
+            for artifact in manifest["artifacts"]:
+                source_relative_path = Path(artifact["path"])
+                source = package_dir / source_relative_path
+                source_key = source_relative_path.as_posix()
+                destination_name = file_names.get(
+                    source_key, source_relative_path.name
+                )
+                target = staging_dir / destination_name
+                _copy_file_fsynced(source, target)
+                artifact["path"] = destination_name
+
+            with (staging_dir / "manifest.json").open(
+                "w", encoding="utf-8", newline="\n"
+            ) as file:
+                json.dump(manifest, file, indent=2, sort_keys=True)
+                file.write("\n")
+                file.flush()
+                os.fsync(file.fileno())
+
             shutil.copytree(
                 data.files.images_folder,
                 staging_dir / "images",
                 copy_function=_copy_file_fsynced,
             )
-            os.replace(staging_dir, published_dir)
+            for staged_file in staging_dir.iterdir():
+                if staged_file.is_file():
+                    os.replace(staged_file, destination_folder / staged_file.name)
+            shutil.copytree(
+                staging_dir / "images",
+                destination_folder / "images",
+                dirs_exist_ok=True,
+                copy_function=_copy_file_fsynced,
+            )
         except Exception:
             if staging_dir.exists():
                 shutil.rmtree(staging_dir)
             raise
 
-        return published_dir
+        shutil.rmtree(staging_dir)
+        return destination_folder

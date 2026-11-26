@@ -245,15 +245,45 @@ def test_finalize_combines_and_trims_cover_proposal_and_spec_sheets(
     fileserver_package = OfficeDocumentManager().copy_to_fileserver(
         data, cast(SettingsManager, settings)
     )
-    assert (fileserver_package / "proposal_package" / "manifest.json").is_file()
-    assert (fileserver_package / "images").is_dir()
+    assert fileserver_package == root / "bids" / "Lovelace, Ada"
+    expected_names = {
+        "manifest.json",
+        "cover_letter.pdf",
+        "panel.pdf",
+        "inverter.pdf",
+    }
+    manifest = json.loads(
+        (fileserver_package / "manifest.json").read_text(encoding="utf-8")
+    )
+    date_prefix = f"{datetime.now().strftime('%y_%m%d')} Lovelace, Ada"
+    expected_names.update(
+        {
+            f"{date_prefix} PV Proposal.pdf",
+            f"{date_prefix} PV Bid.xlsx",
+            "PV ESS Proposal - Lovelace, Ada.docx",
+            "Proposal for - Ada Lovelace.pdf",
+        }
+    )
+    assert {
+        path.name for path in fileserver_package.iterdir() if path.is_file()
+    } == expected_names
+    assert {path.name for path in fileserver_package.iterdir() if path.is_dir()} == {
+        "images"
+    }
+    assert all(
+        Path(artifact["path"]).name == artifact["path"]
+        and (fileserver_package / artifact["path"]).is_file()
+        for artifact in manifest["artifacts"]
+    )
     assert (
         fileserver_package / "images" / "site-photo.jpg"
     ).read_bytes() == b"fixture image"
-    with pytest.raises(FileExistsError):
+    assert (
         OfficeDocumentManager().copy_to_fileserver(
             data, cast(SettingsManager, settings)
         )
+        == fileserver_package
+    )
 
 
 def _write_pdf(path, pages, width):
