@@ -49,6 +49,7 @@ class App(ctk.CTk):
 
         self._busy = False
         self._action_buttons = {}
+        self._document_buttons = {}
         self._completed_actions = set()
         self._action_order = []
         self._last_button_states = {}
@@ -132,6 +133,30 @@ class App(ctk.CTk):
         workflow.grid(row=0, column=0, padx=20, pady=12, sticky="nsew")
         workflow.grid_columnconfigure(0, weight=1)
 
+        document_file_actions = {
+            "open_pricing_spreadsheet": {
+                "path": lambda: self.data.files.pricing_spreadsheet,
+                "open_label": "Pricing Spreadsheet",
+                "create_label": "Generate Pricing Spreadsheet",
+                "secondary": self.regenerate_pricing_spreadsheet,
+                "icon": "↻",
+            },
+            "open_proposal_document": {
+                "path": lambda: self.data.files.solargraf_proposal,
+                "open_label": "Proposal Document",
+                "create_label": "Download Proposal Document",
+                "secondary": self.download_proposal_document,
+                "icon": "↻",
+            },
+            "open_cover_letter": {
+                "path": lambda: self.data.files.cover_letter_docx,
+                "open_label": "Cover Letter",
+                "create_label": "Generate Cover Letter",
+                "secondary": self.generate_cover_letter,
+                "icon": "↻",
+            },
+        }
+
         section_specs = [
             (
                 "Setup",
@@ -152,9 +177,9 @@ class App(ctk.CTk):
             (
                 "Documents",
                 [
-                    ("Open Pricing Spreadsheet", self.open_pricing_spreadsheet),
-                    ("Download Proposal Document", self.download_proposal_document),
-                    ("Generate Cover Letter", self.generate_cover_letter),
+                    ("Pricing Spreadsheet", self.open_pricing_spreadsheet),
+                    ("Proposal Document", self.open_proposal_document),
+                    ("Cover Letter", self.open_cover_letter),
                     ("Finalize Proposal", self.finalize_proposal),
                     ("Draft Customer Email", self.draft_customer_email),
                     ("Copy to Bids Folder", self.copy_to_bids_folder),
@@ -172,6 +197,60 @@ class App(ctk.CTk):
             row += 1
 
             for label, command in actions:
+                command_name = command.__name__
+                document_action = document_file_actions.get(command_name)
+                if document_action:
+                    action_row = ctk.CTkFrame(
+                        workflow, fg_color="transparent", width=1, height=28
+                    )
+                    action_row.grid(
+                        row=row, column=0, padx=12, pady=(0, 10), sticky="ew"
+                    )
+                    action_row.grid_propagate(False)
+                    action_row.grid_columnconfigure(0, weight=1)
+                    button = ctk.CTkButton(
+                        action_row,
+                        text=document_action["create_label"],
+                        command=lambda fn=command: self._run_task(fn),
+                    )
+                    button.grid(row=0, column=0, padx=0, pady=0, sticky="ew")
+                    secondary_action = document_action["secondary"]
+                    secondary_button = ctk.CTkButton(
+                        action_row,
+                        text=document_action["icon"],
+                        width=40,
+                        font=ctk.CTkFont(size=18),
+                        command=lambda fn=secondary_action: self._run_task(fn),
+                    )
+                    secondary_button.grid(
+                        row=0, column=1, padx=(4, 0), pady=0, sticky="e"
+                    )
+                    self._document_buttons[command_name] = {
+                        "row": action_row,
+                        "button": button,
+                        "secondary_button": secondary_button,
+                        **document_action,
+                    }
+                    self._action_buttons[command_name] = {
+                        "button": button,
+                        "text": label,
+                        "available_without_project": False,
+                    }
+                    self._action_order.append(command_name)
+                    secondary_name = secondary_action.__name__
+                    self._action_buttons[secondary_name] = {
+                        "button": secondary_button,
+                        "text": document_action["icon"],
+                        "available_without_project": False,
+                    }
+                    self._action_order.append(secondary_name)
+                    if section_title != "Setup":
+                        button.configure(state="disabled")
+                        secondary_button.configure(state="disabled")
+                        secondary_button.grid_remove()
+                    row += 1
+                    continue
+
                 button = ctk.CTkButton(
                     workflow,
                     text=label,
@@ -179,7 +258,6 @@ class App(ctk.CTk):
                 )
                 button.grid(row=row, column=0, padx=12, pady=(0, 10), sticky="ew")
 
-                command_name = command.__name__
                 self._action_order.append(command_name)
                 self._action_buttons[command_name] = {
                     "button": button,
@@ -373,6 +451,7 @@ class App(ctk.CTk):
     def _handle_task_result(self, task_name, result):
         """Restore the UI after success and update project or action status."""
         self._set_busy(False)
+        self._refresh_document_buttons()
 
         self._completed_actions.add(task_name)
         self._update_button_status(task_name)
@@ -471,6 +550,7 @@ class App(ctk.CTk):
         self.project_title.configure(text=customer_name)
         self.project_hint.configure(text=address)
         self._update_summary()
+        self._refresh_document_buttons()
         self._log_validation_report()
         self._set_status(f"Loaded: {self.data.project.id}")
         self._log(f"Loaded {customer_name} ({self.data.project.id}).")
@@ -698,21 +778,62 @@ class App(ctk.CTk):
         self.templates.update(self.data)
         return f"Downloaded proposal document to {output_path}."
 
+    def open_proposal_document(self):
+        """Open the downloaded proposal PDF, downloading it when it is missing."""
+        self._require_project()
+        if not self.data.files.solargraf_proposal.is_file():
+            return self.download_proposal_document()
+        os.startfile(self.data.files.solargraf_proposal)
+        return f"Opened proposal document at {self.data.files.solargraf_proposal}."
+
     def open_pricing_spreadsheet(self):
-        """Generate the pricing workbook from project data and open it."""
+        """Open the pricing workbook, generating it first when it is missing."""
+        self._require_project()
+        if not self.data.files.pricing_spreadsheet.is_file():
+            self.office.complete_pricing_spreadsheet(self.data, self.templates)
+        os.startfile(self.data.files.pricing_spreadsheet)
+        return f"Opened pricing spreadsheet {self.data.files.pricing_spreadsheet}."
+
+    def regenerate_pricing_spreadsheet(self):
+        """Regenerate and open the pricing workbook."""
         self._require_project()
         self.office.complete_pricing_spreadsheet(self.data, self.templates)
         os.startfile(self.data.files.pricing_spreadsheet)
-        return f"Generated and opened pricing spreadsheet {self.data.files.pricing_spreadsheet}."
+        return (
+            f"Regenerated and opened pricing spreadsheet "
+            f"{self.data.files.pricing_spreadsheet}."
+        )
+
+    def open_cover_letter(self):
+        """Open the cover letter, generating it first when it is missing."""
+        self._require_project()
+        if not self.data.files.cover_letter_docx.is_file():
+            self.office.complete_cover_letter(self.data, self.templates)
+        os.startfile(self.data.files.cover_letter_docx)
+        return f"Opened cover letter at {self.data.files.cover_letter_docx}."
 
     def generate_cover_letter(self):
-        """Generate a populated cover letter and open the resulting document."""
+        """Regenerate and open the populated cover letter."""
         self._require_project()
         self.office.complete_cover_letter(self.data, self.templates)
         os.startfile(self.data.files.cover_letter_docx)
-        return (
-            f"Generated and opened cover letter at {self.data.files.cover_letter_docx}."
-        )
+        return f"Regenerated and opened cover letter at {self.data.files.cover_letter_docx}."
+
+    def _refresh_document_buttons(self):
+        """Update document labels and show regeneration controls only for existing files."""
+        for document_action in self._document_buttons.values():
+            file_exists = document_action["path"]().is_file()
+            document_action["button"].configure(
+                text=(
+                    document_action["open_label"]
+                    if file_exists
+                    else document_action["create_label"]
+                )
+            )
+            if file_exists:
+                document_action["secondary_button"].grid()
+            else:
+                document_action["secondary_button"].grid_remove()
 
     @staticmethod
     def _run_post_generation_action(label, action):

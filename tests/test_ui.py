@@ -42,6 +42,158 @@ def test_download_proposal_document_refreshes_templates_with_pdf_metrics(tmp_pat
     assert data.proposal_pdf_metrics.annual_production_kwh == 15925.6
 
 
+def test_open_pricing_spreadsheet_opens_existing_file_without_regenerating(
+    tmp_path, monkeypatch
+):
+    spreadsheet = tmp_path / "pricing_spreadsheet.xlsx"
+    spreadsheet.touch()
+    generated = []
+    opened = []
+    app = cast(
+        App,
+        SimpleNamespace(
+            _require_project=lambda: None,
+            data=SimpleNamespace(
+                files=SimpleNamespace(pricing_spreadsheet=spreadsheet)
+            ),
+            office=SimpleNamespace(
+                complete_pricing_spreadsheet=lambda *args: generated.append(args)
+            ),
+        ),
+    )
+    monkeypatch.setattr("ui.os.startfile", opened.append)
+
+    result = App.open_pricing_spreadsheet(app)
+
+    assert result == f"Opened pricing spreadsheet {spreadsheet}."
+    assert opened == [spreadsheet]
+    assert generated == []
+
+
+def test_open_proposal_document_downloads_when_file_is_missing(tmp_path):
+    proposal = tmp_path / "solargraf_proposal.pdf"
+    downloads = []
+    app = cast(
+        App,
+        SimpleNamespace(
+            _require_project=lambda: None,
+            data=SimpleNamespace(files=SimpleNamespace(solargraf_proposal=proposal)),
+            download_proposal_document=lambda: (
+                downloads.append(proposal)
+                or f"Downloaded proposal document to {proposal}."
+            ),
+        ),
+    )
+
+    result = App.open_proposal_document(app)
+
+    assert result == f"Downloaded proposal document to {proposal}."
+    assert downloads == [proposal]
+
+
+def test_open_cover_letter_generates_when_file_is_missing(tmp_path, monkeypatch):
+    cover_letter = tmp_path / "cover_letter.docx"
+    generated = []
+    opened = []
+    app = cast(
+        App,
+        SimpleNamespace(
+            _require_project=lambda: None,
+            data=SimpleNamespace(files=SimpleNamespace(cover_letter_docx=cover_letter)),
+            office=SimpleNamespace(
+                complete_cover_letter=lambda *args: generated.append(args)
+            ),
+            templates=object(),
+        ),
+    )
+    monkeypatch.setattr("ui.os.startfile", opened.append)
+
+    result = App.open_cover_letter(app)
+
+    assert result == f"Opened cover letter at {cover_letter}."
+    assert len(generated) == 1
+    assert opened == [cover_letter]
+
+
+def test_generate_cover_letter_regenerates_existing_file(tmp_path, monkeypatch):
+    cover_letter = tmp_path / "cover_letter.docx"
+    cover_letter.touch()
+    generated = []
+    opened = []
+    app = cast(
+        App,
+        SimpleNamespace(
+            _require_project=lambda: None,
+            data=SimpleNamespace(files=SimpleNamespace(cover_letter_docx=cover_letter)),
+            office=SimpleNamespace(
+                complete_cover_letter=lambda *args: generated.append(args)
+            ),
+            templates=object(),
+        ),
+    )
+    monkeypatch.setattr("ui.os.startfile", opened.append)
+
+    result = App.generate_cover_letter(app)
+
+    assert result == f"Regenerated and opened cover letter at {cover_letter}."
+    assert len(generated) == 1
+    assert opened == [cover_letter]
+
+
+def test_document_button_refresh_shows_regenerate_action_only_for_existing_file(
+    tmp_path,
+):
+    class Button:
+        def __init__(self):
+            self.options = {}
+            self.visible = True
+
+        def configure(self, **options):
+            self.options.update(options)
+
+        def grid(self):
+            self.visible = True
+
+        def grid_remove(self):
+            self.visible = False
+
+    existing_path = tmp_path / "pricing_spreadsheet.xlsx"
+    existing_path.touch()
+    missing_path = tmp_path / "cover_letter.docx"
+    existing_button = Button()
+    existing_action = Button()
+    missing_button = Button()
+    missing_action = Button()
+    app = cast(
+        App,
+        SimpleNamespace(
+            _document_buttons={
+                "pricing": {
+                    "path": lambda: existing_path,
+                    "button": existing_button,
+                    "secondary_button": existing_action,
+                    "open_label": "Pricing Spreadsheet",
+                    "create_label": "Generate Pricing Spreadsheet",
+                },
+                "cover": {
+                    "path": lambda: missing_path,
+                    "button": missing_button,
+                    "secondary_button": missing_action,
+                    "open_label": "Cover Letter",
+                    "create_label": "Generate Cover Letter",
+                },
+            }
+        ),
+    )
+
+    App._refresh_document_buttons(app)
+
+    assert existing_button.options["text"] == "Pricing Spreadsheet"
+    assert existing_action.visible
+    assert missing_button.options["text"] == "Generate Cover Letter"
+    assert not missing_action.visible
+
+
 def test_continue_local_project_uses_saved_data_without_rewriting_it(
     tmp_path, monkeypatch
 ):
