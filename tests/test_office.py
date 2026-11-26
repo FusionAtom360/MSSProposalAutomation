@@ -6,7 +6,7 @@ from io import BytesIO
 from pathlib import Path
 from types import SimpleNamespace
 from typing import cast
-from unittest.mock import Mock
+from unittest.mock import Mock, call
 
 import pytest
 from docx import Document
@@ -77,6 +77,8 @@ def test_generate_email_uses_customer_friendly_attachment_name(tmp_path, monkeyp
     email_template = tmp_path / "email.html"
     email_template.write_text("<p>Proposal</p>", encoding="utf-8")
     final_proposal = tmp_path / "proposal_packages" / "run-id" / "final_proposal.pdf"
+    final_proposal.parent.mkdir(parents=True)
+    final_proposal.write_bytes(b"%PDF-1.4 test")
     data = SimpleNamespace(
         update_from_pricing_spreadsheet=Mock(),
         client=SimpleNamespace(first_name="Ada", last_name="Lovelace"),
@@ -93,6 +95,7 @@ def test_generate_email_uses_customer_friendly_attachment_name(tmp_path, monkeyp
     }.__getitem__
     variables.get_all.return_value = {}
     mail = Mock()
+    mail.Attachments.Count = 1
     monkeypatch.setattr(
         "office.win32.Dispatch",
         lambda name: SimpleNamespace(CreateItem=lambda item_type: mail),
@@ -101,12 +104,32 @@ def test_generate_email_uses_customer_friendly_attachment_name(tmp_path, monkeyp
         "office.datetime", SimpleNamespace(now=lambda: datetime(2026, 1, 2))
     )
 
-    OfficeDocumentManager().generate_email(cast(DataManager, data), variables)
+    result = OfficeDocumentManager().generate_email(cast(DataManager, data), variables)
 
+    assert result == final_proposal
+    assert mail.BodyFormat == 2
     mail.Attachments.Add.assert_called_once_with(
-        str(final_proposal), 1, 0, "26_0102 Lovelace, Ada PV Proposal.pdf"
+        str(final_proposal), 1, 1, "26_0102 Lovelace, Ada PV Proposal.pdf"
+    )
+    assert mail.Save.call_count == 2
+    assert mail.mock_calls.index(call.Save()) < mail.mock_calls.index(
+        call.Attachments.Add(
+            str(final_proposal), 1, 1, "26_0102 Lovelace, Ada PV Proposal.pdf"
+        )
     )
     mail.Display.assert_called_once_with(False)
+
+
+def test_generate_email_fails_when_final_proposal_is_missing(tmp_path):
+    data = SimpleNamespace(
+        update_from_pricing_spreadsheet=Mock(),
+        files=SimpleNamespace(
+            final_proposal=tmp_path / "missing.pdf",
+        ),
+    )
+
+    with pytest.raises(FileNotFoundError, match="Final proposal PDF is missing"):
+        OfficeDocumentManager().generate_email(cast(DataManager, data), Mock())
 
 
 def test_finalize_combines_and_trims_cover_proposal_and_spec_sheets(

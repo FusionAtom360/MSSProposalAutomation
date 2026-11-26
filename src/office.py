@@ -372,13 +372,21 @@ class OfficeDocumentManager:
             )
         return page_limit
 
-    def generate_email(self, data: DataManager, variables) -> None:
+    def generate_email(self, data: DataManager, variables) -> Path:
         """Create and display an Outlook draft with the final proposal attached."""
         data.update_from_pricing_spreadsheet()
         variables.update(data)
 
+        proposal_path = Path(data.files.final_proposal)
+        if not proposal_path.is_file():
+            raise FileNotFoundError(
+                f"Final proposal PDF is missing; cannot attach it to the email: "
+                f"{proposal_path}"
+            )
+
         outlook = win32.Dispatch("Outlook.Application")
         mail = outlook.CreateItem(0)  # 0: olMailItem
+        mail.BodyFormat = 2  # olFormatHTML
         mail.Subject = (
             f"Mid-State Solar - Proposal for {variables.resolve(r'{{SYSTEM_TYPE}}')}"
         )
@@ -389,6 +397,7 @@ class OfficeDocumentManager:
             email_body = email_body.replace(str(placeholder), str(replacement))
 
         mail.HtmlBody = email_body
+        mail.Save()
         system_type = (
             "PV"
             if data.system.type == 0
@@ -401,8 +410,14 @@ class OfficeDocumentManager:
             f"{data.client.last_name}, {data.client.first_name} "
             f"{system_type} Proposal.pdf"
         )
-        mail.Attachments.Add(str(data.files.final_proposal), 1, 0, attachment_name)
+        mail.Attachments.Add(str(proposal_path), 1, 1, attachment_name)
+        mail.Save()
+        if mail.Attachments.Count < 1:
+            raise RuntimeError(
+                f"Outlook did not attach the final proposal PDF: {proposal_path}"
+            )
         mail.Display(False)
+        return proposal_path
 
     @staticmethod
     def _replace_in_paragraph(paragraph, replacements: Mapping[str, Any]) -> None:
