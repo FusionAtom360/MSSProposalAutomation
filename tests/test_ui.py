@@ -343,3 +343,20 @@ def test_copy_to_bids_folder_runs_as_a_separate_action():
 
     assert calls == ["bids"]
     assert result == f"Bids folder copy: complete ({published_path})"
+
+
+def test_finalize_and_send_runs_existing_actions_in_order():
+    calls = []
+    app = cast(
+        App,
+        SimpleNamespace(
+            finalize_proposal=lambda: calls.append("finalize") or "finalize: complete",
+            draft_customer_email=lambda: calls.append("email") or "email: complete",
+            copy_to_bids_folder=lambda: calls.append("bids") or "bids: complete",
+        ),
+    )
+
+    result = App.finalize_and_send(app)
+
+    assert calls == ["finalize", "email", "bids"]
+    assert result == "finalize: complete\nemail: complete\nbids: complete"

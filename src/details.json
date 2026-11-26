@@ -2,6 +2,7 @@
     "version": "0.5.6",
     "changelog": [
         "Updated the pricing spreadsheet, proposal document, and cover letter controls",
-        "Kept each document-control row within the workflow panel width so the icon uses space from the main button rather than expanding the panel"
+        "Kept each document-control row within the workflow panel width so the icon uses space from the main button rather than expanding the panel",
+        "Fixed a bug where the email template was not being applied correctly"
     ]
 }

@@ -180,9 +180,7 @@ class App(ctk.CTk):
                     ("Pricing Spreadsheet", self.open_pricing_spreadsheet),
                     ("Proposal Document", self.open_proposal_document),
                     ("Cover Letter", self.open_cover_letter),
-                    ("Finalize Proposal", self.finalize_proposal),
-                    ("Draft Customer Email", self.draft_customer_email),
-                    ("Copy to Bids Folder", self.copy_to_bids_folder),
+                    ("Finalize & Send", self.finalize_and_send),
                 ],
             ),
         ]
@@ -877,6 +875,13 @@ class App(ctk.CTk):
             "Bids folder copy",
             lambda: self.office.copy_to_fileserver(self.data, self.settings),
         )
+
+    def finalize_and_send(self):
+        """Finalize the proposal, draft the customer email, and copy the package."""
+        finalize_status = self.finalize_proposal()
+        email_status = self.draft_customer_email()
+        copy_status = self.copy_to_bids_folder()
+        return "\n".join((finalize_status, email_status, copy_status))
 
 
 if __name__ == "__main__":
