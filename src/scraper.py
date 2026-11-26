@@ -23,6 +23,14 @@ load_dotenv(Path(__file__).with_name(".env"))
 _PDF_NUMBER = r"([\d,]+(?:\.\d+)?)"
 
 
+def _normalize_auth_token(token: str) -> str:
+    """Remove whitespace and one pair of accidental double quotes."""
+    value = token.strip()
+    if len(value) >= 2 and value.startswith('"') and value.endswith('"'):
+        value = value[1:-1].strip()
+    return value
+
+
 def _extract_pdf_number(text: str, label: str, unit: str) -> float:
     """Extract a labeled numeric value and unit from normalized PDF text."""
     normalized_text = re.sub(r"\s+", " ", text)
@@ -267,10 +275,11 @@ class Scraper:
     def _refresh_auth_token(self, settings: SettingsManager) -> None:
         """Reuse, refresh, or interactively acquire a valid SolarGraf token."""
         endpoint = "https://api.solargraf.com/companies/27792/projects"
+        settings.set_auth_key(_normalize_auth_token(settings.auth.key))
         if self.http.get(endpoint, auth_key=settings.auth.key).ok:
             return
 
-        request_auth_key = os.getenv("REQUEST_AUTH_KEY", "")
+        request_auth_key = _normalize_auth_token(os.getenv("REQUEST_AUTH_KEY", ""))
         if request_auth_key and self.http.get(endpoint, auth_key=request_auth_key).ok:
             settings.set_auth_key(request_auth_key)
             return
@@ -281,16 +290,17 @@ class Scraper:
         """Wait for a token submitted to the local receiver and persist it."""
         if self.http.get(
             "https://api.solargraf.com/companies/27792/projects",
-            headers={"authorization": f"Bearer {settings.auth.key}"},
+            auth_key=settings.auth.key,
             timeout=30,
         ).ok:
             return
-        if self.http.get(
+        request_auth_key = _normalize_auth_token(os.getenv("REQUEST_AUTH_KEY", ""))
+        if request_auth_key and self.http.get(
             "https://api.solargraf.com/companies/27792/projects",
-            headers={"authorization": f"Bearer {os.getenv('REQUEST_AUTH_KEY')}"},
+            auth_key=request_auth_key,
             timeout=30,
         ).ok:
-            settings.set_auth_key(str(os.getenv("REQUEST_AUTH_KEY")))
+            settings.set_auth_key(request_auth_key)
             return
         server = TokenHTTPServer(("127.0.0.1", 8765))
         thread = threading.Thread(target=server.serve_forever, daemon=True)
@@ -301,11 +311,14 @@ class Scraper:
             if not server.session.received.wait(300):
                 raise TimeoutError("Timed out waiting for Solargraf token.")
 
-            token = server.session.token
-            if token is None:
+            received_token = server.session.token
+            if received_token is None:
                 raise RuntimeError(
                     "Token receiver signaled completion without a token."
                 )
+            token = _normalize_auth_token(received_token)
+            if not token:
+                raise RuntimeError("Received an empty SolarGraf authentication token.")
 
             settings.set_auth_key(token)
             set_key(
