@@ -47,8 +47,8 @@ def test_open_pricing_spreadsheet_opens_existing_file_without_regenerating(
 ):
     spreadsheet = tmp_path / "pricing_spreadsheet.xlsx"
     spreadsheet.touch()
-    generated = []
-    opened = []
+    generated: list[tuple[object, ...]] = []
+    opened: list[Path] = []
     app = cast(
         App,
         SimpleNamespace(
@@ -72,16 +72,18 @@ def test_open_pricing_spreadsheet_opens_existing_file_without_regenerating(
 
 def test_open_proposal_document_downloads_when_file_is_missing(tmp_path):
     proposal = tmp_path / "solargraf_proposal.pdf"
-    downloads = []
+    downloads: list[Path] = []
+
+    def download_proposal_document():
+        downloads.append(proposal)
+        return f"Downloaded proposal document to {proposal}."
+
     app = cast(
         App,
         SimpleNamespace(
             _require_project=lambda: None,
             data=SimpleNamespace(files=SimpleNamespace(solargraf_proposal=proposal)),
-            download_proposal_document=lambda: (
-                downloads.append(proposal)
-                or f"Downloaded proposal document to {proposal}."
-            ),
+            download_proposal_document=download_proposal_document,
         ),
     )
 
@@ -93,8 +95,8 @@ def test_open_proposal_document_downloads_when_file_is_missing(tmp_path):
 
 def test_open_cover_letter_generates_when_file_is_missing(tmp_path, monkeypatch):
     cover_letter = tmp_path / "cover_letter.docx"
-    generated = []
-    opened = []
+    generated: list[tuple[object, ...]] = []
+    opened: list[Path] = []
     app = cast(
         App,
         SimpleNamespace(
@@ -118,8 +120,8 @@ def test_open_cover_letter_generates_when_file_is_missing(tmp_path, monkeypatch)
 def test_generate_cover_letter_regenerates_existing_file(tmp_path, monkeypatch):
     cover_letter = tmp_path / "cover_letter.docx"
     cover_letter.touch()
-    generated = []
-    opened = []
+    generated: list[tuple[object, ...]] = []
+    opened: list[Path] = []
     app = cast(
         App,
         SimpleNamespace(
@@ -346,13 +348,26 @@ def test_copy_to_bids_folder_runs_as_a_separate_action():
 
 
 def test_finalize_and_send_runs_existing_actions_in_order():
-    calls = []
+    calls: list[str] = []
+
+    def finalize_proposal():
+        calls.append("finalize")
+        return "finalize: complete"
+
+    def draft_customer_email():
+        calls.append("email")
+        return "email: complete"
+
+    def copy_to_bids_folder():
+        calls.append("bids")
+        return "bids: complete"
+
     app = cast(
         App,
         SimpleNamespace(
-            finalize_proposal=lambda: calls.append("finalize") or "finalize: complete",
-            draft_customer_email=lambda: calls.append("email") or "email: complete",
-            copy_to_bids_folder=lambda: calls.append("bids") or "bids: complete",
+            finalize_proposal=finalize_proposal,
+            draft_customer_email=draft_customer_email,
+            copy_to_bids_folder=copy_to_bids_folder,
         ),
     )
 

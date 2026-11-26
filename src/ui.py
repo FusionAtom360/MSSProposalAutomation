@@ -7,7 +7,7 @@ import traceback
 import webbrowser
 import json
 from pathlib import Path
-from typing import Any
+from typing import Any, Callable, TypedDict
 
 import customtkinter as ctk
 from tkinter import messagebox
@@ -25,6 +25,15 @@ ctk.set_default_color_theme("blue")
 
 
 logger = logging.getLogger("mss_proposal_automation.ui")
+
+
+class DocumentFileAction(TypedDict):
+    path: Callable[[], Path]
+    open_label: str
+    create_label: str
+    secondary: Callable[[], Any]
+    secondary_name: str
+    icon: str
 
 
 class App(ctk.CTk):
@@ -133,12 +142,13 @@ class App(ctk.CTk):
         workflow.grid(row=0, column=0, padx=20, pady=12, sticky="nsew")
         workflow.grid_columnconfigure(0, weight=1)
 
-        document_file_actions = {
+        document_file_actions: dict[str, DocumentFileAction] = {
             "open_pricing_spreadsheet": {
                 "path": lambda: self.data.files.pricing_spreadsheet,
                 "open_label": "Pricing Spreadsheet",
                 "create_label": "Generate Pricing Spreadsheet",
                 "secondary": self.regenerate_pricing_spreadsheet,
+                "secondary_name": "regenerate_pricing_spreadsheet",
                 "icon": "↻",
             },
             "open_proposal_document": {
@@ -146,6 +156,7 @@ class App(ctk.CTk):
                 "open_label": "Proposal Document",
                 "create_label": "Download Proposal Document",
                 "secondary": self.download_proposal_document,
+                "secondary_name": "download_proposal_document",
                 "icon": "↻",
             },
             "open_cover_letter": {
@@ -153,6 +164,7 @@ class App(ctk.CTk):
                 "open_label": "Cover Letter",
                 "create_label": "Generate Cover Letter",
                 "secondary": self.generate_cover_letter,
+                "secondary_name": "generate_cover_letter",
                 "icon": "↻",
             },
         }
@@ -235,7 +247,7 @@ class App(ctk.CTk):
                         "available_without_project": False,
                     }
                     self._action_order.append(command_name)
-                    secondary_name = secondary_action.__name__
+                    secondary_name = document_action["secondary_name"]
                     self._action_buttons[secondary_name] = {
                         "button": secondary_button,
                         "text": document_action["icon"],
