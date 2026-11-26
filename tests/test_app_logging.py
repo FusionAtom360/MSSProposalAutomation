@@ -8,6 +8,28 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 import app_logging
 
 
+def test_main_reports_startup_error_if_logging_setup_fails(monkeypatch):
+    import main
+
+    errors = []
+
+    def fail_logging_setup():
+        raise RuntimeError("logging setup failed")
+
+    monkeypatch.setattr(app_logging, "configure_logging", fail_logging_setup)
+    monkeypatch.setattr(
+        app_logging,
+        "show_crash_alert",
+        lambda logger, exc_type, exc_value, exc_traceback, **kwargs: errors.append(
+            exc_value
+        ),
+    )
+
+    assert main.main() == 1
+    assert len(errors) == 1
+    assert str(errors[0]) == "logging setup failed"
+
+
 def test_log_contains_only_current_run_and_appends_after_reconfiguration(
     tmp_path, monkeypatch
 ):

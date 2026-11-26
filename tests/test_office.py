@@ -34,6 +34,45 @@ def test_finalize_validates_prerequisites_before_external_operations(monkeypatch
     convert.assert_not_called()
 
 
+def test_finalize_shows_actionable_error_when_word_quit_is_unavailable(
+    tmp_path, monkeypatch
+):
+    documents = tmp_path / "documents"
+    documents.mkdir()
+    cover_letter = documents / "cover_letter.docx"
+    Document().save(cover_letter)
+    proposal_pdf = documents / "solargraf_proposal.pdf"
+    _write_pdf(proposal_pdf, 1, 602)
+    pricing_spreadsheet = documents / "pricing_spreadsheet.xlsx"
+    pricing_spreadsheet.touch()
+    settings = documents / "settings.xlsx"
+    settings.touch()
+
+    data = DataManager()
+    data.files.documents_folder = documents
+    data.files.cover_letter_docx = cover_letter
+    data.files.solargraf_proposal = proposal_pdf
+    data.files.pricing_spreadsheet = pricing_spreadsheet
+    data.files.settings = settings
+    monkeypatch.setattr(data, "validate_for_document_generation", lambda kind: None)
+    monkeypatch.setattr(
+        "office.docx2pdf.convert",
+        Mock(side_effect=AttributeError("Word.Application.Quit")),
+    )
+
+    with pytest.raises(
+        RuntimeError,
+        match="Word.Application.Quit is unavailable.*proposal package was not published",
+    ) as exc_info:
+        OfficeDocumentManager().finalize_proposal(
+            data, object(), cast(AppScraper, object())
+        )
+
+    assert isinstance(exc_info.value.__cause__, AttributeError)
+    assert list((documents / ".proposal-staging").iterdir()) == []
+    assert list((documents / "proposal_packages").iterdir()) == []
+
+
 def test_generate_email_uses_customer_friendly_attachment_name(tmp_path, monkeypatch):
     email_template = tmp_path / "email.html"
     email_template.write_text("<p>Proposal</p>", encoding="utf-8")

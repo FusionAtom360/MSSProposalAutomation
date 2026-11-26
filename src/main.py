@@ -15,12 +15,15 @@ def main():
             configure_logging,
             install_exception_hooks,
             set_crash_alert_parent,
-            show_crash_alert,
+            show_crash_alert as crash_alert,
         )
-        from dotenv import load_dotenv
 
+        show_crash_alert = crash_alert
         logger = configure_logging()
         install_exception_hooks(logger)
+
+        from dotenv import load_dotenv
+
         load_dotenv(Path(__file__).resolve().with_name(".env"))
 
         from update import UpdateManager

@@ -169,7 +169,20 @@ class OfficeDocumentManager:
             source_proposal_pages = _validate_pdf(snapshots["solargraf_proposal_pdf"])
             cover_letter_pdf = staging_dir / "cover_letter.pdf"
             converted_pdf = staging_dir / "cover_letter.converted.pdf"
-            docx2pdf.convert(str(snapshots["cover_letter_docx"]), str(converted_pdf))
+            try:
+                docx2pdf.convert(
+                    str(snapshots["cover_letter_docx"]), str(converted_pdf)
+                )
+            except AttributeError as exc:
+                if str(exc) != "Word.Application.Quit":
+                    raise
+                raise RuntimeError(
+                    "Microsoft Word automation could not close Word after cover "
+                    "letter PDF conversion (Word.Application.Quit is unavailable). "
+                    "The proposal package was not published. Confirm desktop Word "
+                    "opens normally, then restart Word and retry. If this continues, "
+                    "repair Microsoft Office."
+                ) from exc
             cover_letter_pages = _validate_pdf(converted_pdf)
             _fsync_file(converted_pdf)
             os.replace(converted_pdf, cover_letter_pdf)

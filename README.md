@@ -78,9 +78,8 @@ Start the application from the installation root:
 .\.venv\Scripts\python.exe .\src\main.py
 ```
 
-The included [`run.ps1`](run.ps1) locates the installation from its own path
-and can be invoked from any current working directory. Application data and
-template paths are also resolved from the installation root.
+Launch `src/main.py` directly. Application data and template paths are resolved
+from the installation root.
 
 Unexpected application errors are written to `src/logs/app.log`. The app shows
 a crash alert with an **Email support** button that opens a message to
